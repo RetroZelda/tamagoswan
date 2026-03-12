@@ -9,7 +9,7 @@ include $(WONDERFUL_TOOLCHAIN)/target/$(TARGET)/makedefs.mk
 # Metadata
 # --------
 
-NAME		:= .
+NAME		:= tamagoswan
 
 # Source code paths
 # -----------------
