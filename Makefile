@@ -14,8 +14,8 @@ NAME		:= tamagoswan
 # Source code paths
 # -----------------
 
-INCLUDEDIRS	:= include
-SOURCEDIRS	:= src
+INCLUDEDIRS	:= include lib
+SOURCEDIRS	:= src lib/tamalib
 ASSETDIRS	:= assets
 CBINDIRS	:= cbin
 
@@ -64,7 +64,7 @@ SOURCES_C	:= $(shell find -L $(SOURCEDIRS) -name "*.c")
 # Compiler and linker flags
 # -------------------------
 
-WARNFLAGS	:= -Wall
+WARNFLAGS	:= -Wall #-Wextra
 
 INCLUDEFLAGS	:= $(foreach path,$(INCLUDEDIRS),-I$(path)) \
 		   $(foreach path,$(LIBDIRS),-isystem $(path)/include)

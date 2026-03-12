@@ -4,5 +4,6 @@
     ],
     "Lua.workspace.library": [
         "${env:WONDERFUL_TOOLCHAIN}/lib/lua/5.4"
-    ]
+    ],
+    "C_Cpp.errorSquiggles": "enabled"
 }

@@ -1,3 +1,5 @@
+-m*
 build
+.clangd
 compile_commands.json
 tamagoswan.wsc
