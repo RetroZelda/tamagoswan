@@ -1,0 +1,8 @@
+{
+    "clangd.arguments": [
+        "--query-driver=${env:WONDERFUL_TOOLCHAIN}/toolchain/gcc-ia16-elf/bin/ia16-elf-gcc"
+    ],
+    "Lua.workspace.library": [
+        "${env:WONDERFUL_TOOLCHAIN}/lib/lua/5.4"
+    ]
+}
