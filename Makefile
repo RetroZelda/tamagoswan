@@ -14,7 +14,7 @@ NAME		:= tamagoswan
 # Source code paths
 # -----------------
 
-INCLUDEDIRS	:= include lib
+INCLUDEDIRS	:= include lib 
 SOURCEDIRS	:= src lib/tamalib
 ASSETDIRS	:= assets
 CBINDIRS	:= cbin
@@ -27,14 +27,14 @@ DEFINES		:=
 # Libraries
 # ---------
 
-LIBS		:= -lwsx -lws
+LIBS		:= -lwse -lwsx -lws -lc
 LIBDIRS		:= $(WF_ARCH_LIBDIRS)
 
 # Build artifacts
 # ---------------
 
 BUILDDIR	:= build
-ELF		:= build/$(NAME).elf
+ELF		:= $(NAME).elf
 ELF_STAGE1	:= build/$(NAME)_stage1.elf
 ROM		:= $(NAME).wsc
 
@@ -72,10 +72,10 @@ INCLUDEFLAGS	:= $(foreach path,$(INCLUDEDIRS),-I$(path)) \
 LIBDIRSFLAGS	:= $(foreach path,$(LIBDIRS),-L$(path)/lib)
 
 ASFLAGS		+= -x assembler-with-cpp $(DEFINES) $(WF_ARCH_CFLAGS) \
-		   $(INCLUDEFLAGS) -ffunction-sections -fdata-sections -fno-common
+		   $(INCLUDEFLAGS) -ffunction-sections -fdata-sections -fno-common -g -O2
 
 CFLAGS		+= -std=gnu11 $(WARNFLAGS) $(DEFINES) $(WF_ARCH_CFLAGS) \
-		   $(INCLUDEFLAGS) -ffunction-sections -fdata-sections -fno-common -O2
+		   $(INCLUDEFLAGS) -ffunction-sections -fdata-sections -fno-common -g -O2
 
 LDFLAGS		:= -T$(WF_LDSCRIPT) $(LIBDIRSFLAGS) \
 		   $(WF_ARCH_LDFLAGS) $(LIBS)
