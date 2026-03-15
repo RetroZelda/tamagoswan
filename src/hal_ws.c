@@ -101,7 +101,7 @@ void hal_ws_initize()
 
     const u12_t __wf_rom* rom = (const u12_t __wf_rom*)tamagochi_rom_p1_swapped_data;
 	tamalib_register_hal(&ws_hal);
-    tamalib_init(rom, NULL, CLOCK);
+    tamalib_init(rom, CLOCK);
 
     g_ticks = 0;
 
