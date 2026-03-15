@@ -7,3 +7,4 @@ debug
 -m*
 compile_commands.json
 tamagoswan.wsc
+tamagoswan.elf
