@@ -12,6 +12,7 @@
 #include <stdio.h>
 #include <time.h>
 
+#include "modified_pixel.h"
 #include "rom/rom.h"
 #include "utility.h"
 #include "memory.h"
@@ -22,19 +23,19 @@
 #endif
 
 // functions that map into tamalib
-static void*        __far hal_ws_malloc(u32_t size);
-static void         __far hal_ws_free(void* ptr);
-static void         __far hal_ws_halt(void);
-static bool_t       __far hal_ws_is_log_enabled(log_level_t level);
-static void         __far hal_ws_log(log_level_t level, const char __wf_rom* buff, ...);
-static void         __far hal_ws_sleep_until(timestamp_t ts);
-static timestamp_t  __far hal_ws_get_timestamp(void);
-static void         __far hal_ws_update_screen(void);
-static void         __far hal_ws_set_lcd_matrix(u8_t x, u8_t y, bool_t val);
-static void         __far hal_ws_set_lcd_icon(u8_t icon, bool_t val);
-static void         __far hal_ws_set_frequency(u32_t freq);
-static void         __far hal_ws_play_frequency(bool_t en);
-static int          __far hal_ws_handler(void);
+static void*        hal_ws_malloc(u32_t size);
+static void         hal_ws_free(void* ptr);
+static void         hal_ws_halt(void);
+static bool_t       hal_ws_is_log_enabled(log_level_t level);
+static void         hal_ws_log(log_level_t level, const char __wf_rom* buff, ...);
+static void         hal_ws_sleep_until(timestamp_t ts);
+static timestamp_t  hal_ws_get_timestamp(void);
+static void         hal_ws_update_screen(void);
+static void         hal_ws_set_lcd_matrix(u8_t x, u8_t y, bool_t val);
+static void         hal_ws_set_lcd_icon(u8_t icon, bool_t val);
+static void         hal_ws_set_frequency(u32_t freq);
+static void         hal_ws_play_frequency(bool_t en);
+static int          hal_ws_handler(void);
 
 static hal_t ws_hal = 
 {
@@ -53,32 +54,38 @@ static hal_t ws_hal =
     .handler            = hal_ws_handler,
 };
 
-// buffer that holds the statethat we will want to draw
-static uint8_t ws_iram pixel_buffer[LCD_WIDTH*LCD_HEIGHT];
+typedef struct
+{
+    uint8_t x;
+    uint8_t y;
+    uint8_t pixel;
+} hal_modified_pixel;
+
+
 static uint8_t ws_iram icon_buffer[ICON_NUM];
 
 static uint16_t last_keys = 0;
 static uint16_t curr_keys = 0;
 
 static timestamp_t g_ticks = 0;
-static timestamp_t g_screen_ts = 0;
+// static timestamp_t g_screen_ts = 0;
 static exec_mode_t g_exec_mode = EXEC_MODE_RUN;
 
 #define SPRINTF_BUFFER_SIZE 128
 char ws_iram sprintf_dst_buffer[SPRINTF_BUFFER_SIZE];
 
+#define CLOCK (WS_SYSTEM_CLOCK_HZ >> 16)
 #define TO_LCD_INDEX(x,y)  ((y) * LCD_WIDTH + (x))
-#define TICK_RATE (WS_SYSTEM_CLOCK_HZ / CLOCKS_PER_SEC)
+#define TICK_RATE (CLOCK / CLOCKS_PER_SEC)
 
 DEFINE_STRING(src_test, "TEST %d\n");
 void hal_ws_initize()
 {
-    memset(pixel_buffer, 0x00, LCD_WIDTH * LCD_HEIGHT * sizeof(uint8_t));
     memset(icon_buffer, 0x00, ICON_NUM);
 
     const u12_t __wf_rom* rom = (const u12_t __wf_rom*)tamagochi_rom_p1_swapped_data;
 	tamalib_register_hal(&ws_hal);
-    tamalib_init(rom, NULL, WS_SYSTEM_CLOCK_HZ);
+    tamalib_init(rom, NULL, CLOCK);
     tamalib_set_speed(0);
 
 	tamalib_set_exec_mode(g_exec_mode);
@@ -90,57 +97,39 @@ void hal_ws_initize()
     #ifdef USE_UART
     ws_uart_open(WS_UART_BAUD_RATE_9600);
     #endif
-    // mini_snprintf(sprintf_dst_buffer, SPRINTF_BUFFER_SIZE, src_test, 0x69);
-    // hal_ws_log(LOG_INFO, src_test, 0x69);
 }
 
-void hal_ws_loop()
-{
-    //if(g_ticks++ >= g_sleep_target)
-    {
-        // tamalib_mainloop();
-        tamalib_set_exec_mode(g_exec_mode);
-        g_hal->handler();
-        tamalib_step();
-
-        timestamp_t ts = g_hal->get_timestamp();
-        //if ((ts - g_screen_ts) >= TICK_RATE) 
-        {
-            g_screen_ts = ts;
-            g_hal->update_screen();
-            //hal_ws_log(LOG_INFO, src_test, 0x69);
-        }
-    }
-    // hal_ws_log(LOG_INFO, src_test, 0x69);
-}
-
-void* __far hal_ws_malloc(u32_t size)
+void* hal_ws_malloc(u32_t size)
 {
     return NULL; // ts_memory_malloc(size);
 }
 
-void __far hal_ws_free(void* ptr)
+void hal_ws_free(void* ptr)
 {
     // ts_memory_free(ptr);
 }
 
-void __far hal_ws_halt(void)
+void hal_ws_halt(void)
 {
 
 }
 
-bool_t __far hal_ws_is_log_enabled(log_level_t level)
+bool_t hal_ws_is_log_enabled(log_level_t level)
 {
+#ifdef ENABLE_LOGS
     switch(level)
     {
 	case LOG_ERROR: return true;
 	case LOG_INFO:  return true;
     case LOG_MEMORY:return false;
 	case LOG_CPU:   return false;
-	case LOG_INT:   return true;
+	case LOG_INT:   return false;
 	case LOG_OP:    return false;
     }
     return true;
+#else
+    return false;
+#endif // ENABLE_LOGS
 }
 
 DEFINE_STRING(log_memory,   " MEM");
@@ -150,8 +139,9 @@ DEFINE_STRING(log_cpu,      " CPU");
 DEFINE_STRING(log_int,      " IRQ");
 DEFINE_STRING(log_op,       "  OP");
 DEFINE_STRING(log_format,   "%s: ");
-void ws_iram hal_ws_log(log_level_t level, const char __wf_rom* buff, ...)
+void hal_ws_log(log_level_t level, const char __wf_rom* buff, ...)
 {
+#ifdef ENABLE_LOGS
     if(!hal_ws_is_log_enabled(level))
     {
         return;
@@ -213,68 +203,64 @@ void ws_iram hal_ws_log(log_level_t level, const char __wf_rom* buff, ...)
             }
         }
     }
+#endif // ENABLE_LOGS
 }
 
 DEFINE_STRING(log_halted, "Halted for %d\n");
-void __far hal_ws_sleep_until(timestamp_t ts)
+void hal_ws_sleep_until(timestamp_t ts)
 {
+    /*
     ws_timer_hblank_start_once(ts - g_ticks);
-    ia16_halt();
-    hal_ws_log(LOG_INFO, log_halted, ts - g_ticks);
+    PRINT_LOG(LOG_INFO, log_halted, ts - g_ticks);
+    while(!ws_int_is_requested(WS_INT_STATUS_HBL_TIMER))
+    {
+        ia16_halt();
+    }
     g_ticks = ts;
+    */
 }
 
-timestamp_t __far hal_ws_get_timestamp(void)
+timestamp_t hal_ws_get_timestamp(void)
 {
     return g_ticks;
 }
 
-static uint16_t off_index = 0;
-void __far hal_ws_update_screen(void)
-{    
-    uint16_t row = 0;
-    uint16_t col = 0;
-    uint8_t pixel_state = 0x0;
-    for(; row < LCD_HEIGHT; ++row)
+void hal_ws_update_screen(void)
+{        
+    const ts_modified_pixel* pixel = ts_pixel_pop();
+    while(pixel)
     {
-        col = 0;
-        for(; col < LCD_WIDTH; col += 1)
-        {
-            // should_be_on = off_index == TO_LCD_INDEX(col, row) ? 0xFF : 0x0;w];
-            pixel_state = 0xff;//pixel_buffer[TO_LCD_INDEX(col, row)];
-            uint16_t tile = (WS_SCREEN_ATTR_TILE(0x0) & WS_SCREEN_ATTR_TILE_MASK) // tile index
-                          | (WS_SCREEN_ATTR_PALETTE(pixel_state & 0x3) & WS_SCREEN_ATTR_PALETTE_MASK)
-                          | (WS_SCREEN_ATTR_BANK(0) & WS_SCREEN_ATTR_BANK_MASK) // bank
-                          | (WS_SCREEN_ATTR_FLIP_H) // H Flip
-                          | (WS_SCREEN_ATTR_FLIP_V); // V Flip
-            ws_screen_put_tile(&wse_screen1, tile, col, row);
-        }
-    }
-    off_index = (off_index + 1) % (LCD_WIDTH * LCD_HEIGHT);
-    
+        uint16_t tile = (WS_SCREEN_ATTR_TILE(0x0) & WS_SCREEN_ATTR_TILE_MASK) // tile index
+                        | (WS_SCREEN_ATTR_PALETTE(pixel->pixel & 0x2) & WS_SCREEN_ATTR_PALETTE_MASK)
+                        | (WS_SCREEN_ATTR_BANK(0) & WS_SCREEN_ATTR_BANK_MASK) // bank
+                        | (0)  // WS_SCREEN_ATTR_FLIP_H
+                        | (0); // WS_SCREEN_ATTR_FLIP_V
+        ws_screen_put_tile(&wse_screen1, tile, pixel->x, pixel->y);
+        pixel = ts_pixel_pop();
+    }    
 }
 
-void __far hal_ws_set_lcd_matrix(u8_t x, u8_t y, bool_t val)
+void hal_ws_set_lcd_matrix(u8_t x, u8_t y, bool_t val)
 {
-    pixel_buffer[TO_LCD_INDEX(x, y)] = val != 0 ? 0xFF : 0x0;
+    ts_pixel_push(x, y, val != 0 ? 0xFF : 0x0);
 }
 
-void __far hal_ws_set_lcd_icon(u8_t icon, bool_t val)
+void hal_ws_set_lcd_icon(u8_t icon, bool_t val)
 {
     icon_buffer[icon] = val != 0 ? 0xFF : 0x0;
 }
 
-void __far hal_ws_set_frequency(u32_t freq)
+void hal_ws_set_frequency(u32_t freq)
 {
 
 }
 
-void __far hal_ws_play_frequency(bool_t en)
+void hal_ws_play_frequency(bool_t en)
 {
 
 }
 
-int __far hal_ws_handler(void)
+int hal_ws_handler(void)
 {
 	last_keys = curr_keys;
     curr_keys = ws_keypad_scan();

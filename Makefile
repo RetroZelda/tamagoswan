@@ -22,7 +22,7 @@ CBINDIRS	:= cbin
 # Defines passed to all files
 # ---------------------------
 
-DEFINES		:=
+DEFINES		:= # -DENABLE_LOGS
 
 # Libraries
 # ---------
