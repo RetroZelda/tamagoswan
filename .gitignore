@@ -1,6 +1,9 @@
--m*
+
 build
+debug
 .clangd
 .vscode
+
+-m*
 compile_commands.json
 tamagoswan.wsc
