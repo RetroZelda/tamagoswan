@@ -22,12 +22,14 @@ __attribute__((interrupt))
 static void vblank_int_handler(void) 
 {
     ++g_vblank_ticks;
+    ws_int_ack(WS_INT_ACK_VBLANK);
 }
 
 __attribute__((interrupt))
 static void key_scan_int_handler(void)
 {
     ++g_input_ticks;
+    ws_int_ack(WS_INT_ACK_KEY_SCAN);
 };
 
 void vblank_wait(void) 
@@ -39,6 +41,7 @@ void vblank_wait(void)
     }
 }
 
+#ifdef ENABLE_LOGS
 void setup_console()
 {
     wsx_console_config_t config;
@@ -52,6 +55,7 @@ void setup_console()
     wsx_zx0_decompress(WS_TILE_MEM(config.tile_offset), wsx_console_font_default);
     wsx_console_init(&config);
 }
+#endif // ENABLE_LOGS
 
 void main(void)
 {    
@@ -72,10 +76,16 @@ void main(void)
     memset(WS_TILE_MEM(0), 0xFF, sizeof(ws_display_tile_t));
     memset(WS_TILE_MEM(1), 0x00, sizeof(ws_display_tile_t));
     
+#ifdef ENABLE_LOGS
     setup_console();
 
     // enable screen 1 for the tamagochi and screen 2 for logging
+	ws_display_set_control(WS_DISPLAY_CTRL_SCR1_ENABLE | WS_DISPLAY_CTRL_SCR2_ENABLE);
+#else
+    // enable screen 1 for the tamagochi
 	ws_display_set_control(WS_DISPLAY_CTRL_SCR1_ENABLE);
+#endif // ENABLE_LOGS
+
 
     hal_ws_initize();
 
@@ -96,13 +106,11 @@ void main(void)
         {
             g_hal->update_screen();
             vblank_ticks_last = g_vblank_ticks;
-            ws_int_ack(WS_INT_ACK_VBLANK);
         }
         if(input_ticks_last != g_input_ticks)
         {
             g_hal->handler();
             input_ticks_last = g_input_ticks;
-            ws_int_ack(WS_INT_ACK_KEY_SCAN);
         }
         tamalib_step();
     }

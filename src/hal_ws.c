@@ -22,23 +22,6 @@
 #include <ws/uart.h>
 #endif
 
-// strings for logging the level 
-DEFINE_STRING_LOCAL(log_level_memory,   " MEM");
-DEFINE_STRING_LOCAL(log_level_pixel,    "PIXL");
-DEFINE_STRING_LOCAL(log_level_error,    " ERR");
-DEFINE_STRING_LOCAL(log_level_info,     "INFO");
-DEFINE_STRING_LOCAL(log_level_cpu,      " CPU");
-DEFINE_STRING_LOCAL(log_level_int,      " IRQ");
-DEFINE_STRING_LOCAL(log_level_op,       "  OP");
-DEFINE_STRING_LOCAL(log_format,         "%s: ");
-
-// strings for our HAL logs
-DEFINE_STRING_LOCAL(log_pixel_write, "Pixel (%02d, %02d) %d\n");
-DEFINE_STRING_LOCAL(log_icon_write, "Icon %02d %s\n");
-DEFINE_STRING_LOCAL(log_halted, "Halted for %d\n");
-DEFINE_STRING_LOCAL(log_generic_on, "on");
-DEFINE_STRING_LOCAL(log_generic_off, "off");
-
 // functions that map into tamalib
 static void*        hal_ws_malloc(u32_t size);
 static void         hal_ws_free(void* ptr);
@@ -89,6 +72,23 @@ static timestamp_t g_ticks = 0;
 #ifdef ENABLE_LOGS
 #define SPRINTF_BUFFER_SIZE 128
 char ws_iram sprintf_dst_buffer[SPRINTF_BUFFER_SIZE];
+
+// strings for logging the level 
+DEFINE_STRING(log_level_memory,   " MEM");
+DEFINE_STRING(log_level_pixel,    "PIXL");
+DEFINE_STRING(log_level_error,    " ERR");
+DEFINE_STRING(log_level_info,     "INFO");
+DEFINE_STRING(log_level_cpu,      " CPU");
+DEFINE_STRING(log_level_int,      " IRQ");
+DEFINE_STRING(log_level_op,       "  OP");
+DEFINE_STRING(log_format,         "%s: ");
+
+// strings for our HAL logs
+DEFINE_STRING(log_pixel_write, "Pixel (%02d, %02d) %d\n");
+DEFINE_STRING(log_icon_write, "Icon %02d %s\n");
+DEFINE_STRING(log_halted, "Halted for %d\n");
+DEFINE_STRING(log_generic_on, "on");
+DEFINE_STRING(log_generic_off, "off");
 #endif
 
 #define CLOCK (WS_SYSTEM_CLOCK_HZ >> 16)
@@ -139,7 +139,7 @@ bool_t hal_ws_is_log_enabled(log_level_t level)
 	case LOG_CPU:   return false;
 	case LOG_INT:   return true;
 	case LOG_OP:    return false;
-	case LOG_PIXEL: return true;
+	case LOG_PIXEL: return false;
     }
     return true;
 #else
@@ -257,7 +257,7 @@ void hal_ws_set_lcd_matrix(u8_t x, u8_t y, bool_t val)
 void hal_ws_set_lcd_icon(u8_t icon, bool_t val)
 {
     icon_buffer[icon] = val != 0 ? 0xFF : 0x0;
-    PRINT_LOG(LOG_INFO, log_icon_write, icon, val != 0 ? log_generic_on : log_generic_off);
+    //PRINT_LOG(LOG_INFO, log_icon_write, icon, val != 0 ? log_generic_on : log_generic_off);
 }
 
 void hal_ws_set_frequency(u32_t freq)
