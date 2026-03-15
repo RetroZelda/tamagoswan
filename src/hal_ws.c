@@ -22,6 +22,23 @@
 #include <ws/uart.h>
 #endif
 
+// strings for logging the level 
+DEFINE_STRING_LOCAL(log_level_memory,   " MEM");
+DEFINE_STRING_LOCAL(log_level_pixel,    "PIXL");
+DEFINE_STRING_LOCAL(log_level_error,    " ERR");
+DEFINE_STRING_LOCAL(log_level_info,     "INFO");
+DEFINE_STRING_LOCAL(log_level_cpu,      " CPU");
+DEFINE_STRING_LOCAL(log_level_int,      " IRQ");
+DEFINE_STRING_LOCAL(log_level_op,       "  OP");
+DEFINE_STRING_LOCAL(log_format,         "%s: ");
+
+// strings for our HAL logs
+DEFINE_STRING_LOCAL(log_pixel_write, "Pixel (%02d, %02d) %d\n");
+DEFINE_STRING_LOCAL(log_icon_write, "Icon %02d %s\n");
+DEFINE_STRING_LOCAL(log_halted, "Halted for %d\n");
+DEFINE_STRING_LOCAL(log_generic_on, "on");
+DEFINE_STRING_LOCAL(log_generic_off, "off");
+
 // functions that map into tamalib
 static void*        hal_ws_malloc(u32_t size);
 static void         hal_ws_free(void* ptr);
@@ -68,17 +85,16 @@ static uint16_t last_keys = 0;
 static uint16_t curr_keys = 0;
 
 static timestamp_t g_ticks = 0;
-// static timestamp_t g_screen_ts = 0;
-static exec_mode_t g_exec_mode = EXEC_MODE_RUN;
 
+#ifdef ENABLE_LOGS
 #define SPRINTF_BUFFER_SIZE 128
 char ws_iram sprintf_dst_buffer[SPRINTF_BUFFER_SIZE];
+#endif
 
 #define CLOCK (WS_SYSTEM_CLOCK_HZ >> 16)
 #define TO_LCD_INDEX(x,y)  ((y) * LCD_WIDTH + (x))
 #define TICK_RATE (CLOCK / CLOCKS_PER_SEC)
 
-DEFINE_STRING(src_test, "TEST %d\n");
 void hal_ws_initize()
 {
     memset(icon_buffer, 0x00, ICON_NUM);
@@ -86,9 +102,7 @@ void hal_ws_initize()
     const u12_t __wf_rom* rom = (const u12_t __wf_rom*)tamagochi_rom_p1_swapped_data;
 	tamalib_register_hal(&ws_hal);
     tamalib_init(rom, NULL, CLOCK);
-    tamalib_set_speed(0);
 
-	tamalib_set_exec_mode(g_exec_mode);
     g_ticks = 0;
 
 	last_keys = 0;
@@ -123,8 +137,9 @@ bool_t hal_ws_is_log_enabled(log_level_t level)
 	case LOG_INFO:  return true;
     case LOG_MEMORY:return false;
 	case LOG_CPU:   return false;
-	case LOG_INT:   return false;
+	case LOG_INT:   return true;
 	case LOG_OP:    return false;
+	case LOG_PIXEL: return true;
     }
     return true;
 #else
@@ -132,13 +147,6 @@ bool_t hal_ws_is_log_enabled(log_level_t level)
 #endif // ENABLE_LOGS
 }
 
-DEFINE_STRING(log_memory,   " MEM");
-DEFINE_STRING(log_error,    " ERR");
-DEFINE_STRING(log_info,     "INFO");
-DEFINE_STRING(log_cpu,      " CPU");
-DEFINE_STRING(log_int,      " IRQ");
-DEFINE_STRING(log_op,       "  OP");
-DEFINE_STRING(log_format,   "%s: ");
 void hal_ws_log(log_level_t level, const char __wf_rom* buff, ...)
 {
 #ifdef ENABLE_LOGS
@@ -151,22 +159,25 @@ void hal_ws_log(log_level_t level, const char __wf_rom* buff, ...)
     switch(level)
     {
         case LOG_ERROR:
-            bytes_written = mini_snprintf(sprintf_dst_buffer, SPRINTF_BUFFER_SIZE, log_format, log_error);
+            bytes_written = mini_snprintf(sprintf_dst_buffer, SPRINTF_BUFFER_SIZE, log_format, log_level_error);
             break;
         case LOG_INFO:
-            bytes_written = mini_snprintf(sprintf_dst_buffer, SPRINTF_BUFFER_SIZE, log_format, log_info);
+            bytes_written = mini_snprintf(sprintf_dst_buffer, SPRINTF_BUFFER_SIZE, log_format, log_level_info);
             break;
         case LOG_MEMORY:
-            bytes_written = mini_snprintf(sprintf_dst_buffer, SPRINTF_BUFFER_SIZE, log_format, log_memory);
+            bytes_written = mini_snprintf(sprintf_dst_buffer, SPRINTF_BUFFER_SIZE, log_format, log_level_memory);
             break;
         case LOG_CPU:
-            bytes_written = mini_snprintf(sprintf_dst_buffer, SPRINTF_BUFFER_SIZE, log_format, log_cpu);
+            bytes_written = mini_snprintf(sprintf_dst_buffer, SPRINTF_BUFFER_SIZE, log_format, log_level_cpu);
             break;
         case LOG_INT:
-            bytes_written = mini_snprintf(sprintf_dst_buffer, SPRINTF_BUFFER_SIZE, log_format, log_int);
+            bytes_written = mini_snprintf(sprintf_dst_buffer, SPRINTF_BUFFER_SIZE, log_format, log_level_int);
             break;
         case LOG_OP:
-            bytes_written = mini_snprintf(sprintf_dst_buffer, SPRINTF_BUFFER_SIZE, log_format, log_op);
+            bytes_written = mini_snprintf(sprintf_dst_buffer, SPRINTF_BUFFER_SIZE, log_format, log_level_op);
+            break;
+        case LOG_PIXEL:
+            bytes_written = mini_snprintf(sprintf_dst_buffer, SPRINTF_BUFFER_SIZE, log_format, log_level_pixel);
             break;
     }
     
@@ -206,10 +217,8 @@ void hal_ws_log(log_level_t level, const char __wf_rom* buff, ...)
 #endif // ENABLE_LOGS
 }
 
-DEFINE_STRING(log_halted, "Halted for %d\n");
 void hal_ws_sleep_until(timestamp_t ts)
 {
-    /*
     ws_timer_hblank_start_once(ts - g_ticks);
     PRINT_LOG(LOG_INFO, log_halted, ts - g_ticks);
     while(!ws_int_is_requested(WS_INT_STATUS_HBL_TIMER))
@@ -217,7 +226,6 @@ void hal_ws_sleep_until(timestamp_t ts)
         ia16_halt();
     }
     g_ticks = ts;
-    */
 }
 
 timestamp_t hal_ws_get_timestamp(void)
@@ -243,11 +251,13 @@ void hal_ws_update_screen(void)
 void hal_ws_set_lcd_matrix(u8_t x, u8_t y, bool_t val)
 {
     ts_pixel_push(x, y, val != 0 ? 0xFF : 0x0);
+    PRINT_LOG(LOG_PIXEL, log_pixel_write, x, y, val);
 }
 
 void hal_ws_set_lcd_icon(u8_t icon, bool_t val)
 {
     icon_buffer[icon] = val != 0 ? 0xFF : 0x0;
+    PRINT_LOG(LOG_INFO, log_icon_write, icon, val != 0 ? log_generic_on : log_generic_off);
 }
 
 void hal_ws_set_frequency(u32_t freq)
@@ -267,15 +277,15 @@ int hal_ws_handler(void)
     uint16_t pressed_keys = curr_keys & ~last_keys;
     uint16_t released_keys = ~curr_keys & last_keys;
     
-    if(pressed_keys & WS_KEY_X4) tamalib_set_button(BTN_LEFT,    BTN_STATE_PRESSED);
-    if(pressed_keys & WS_KEY_X3) tamalib_set_button(BTN_MIDDLE,  BTN_STATE_PRESSED);
-    if(pressed_keys & WS_KEY_X2) tamalib_set_button(BTN_TAP,     BTN_STATE_PRESSED);
-    if(pressed_keys & WS_KEY_A ) tamalib_set_button(BTN_RIGHT,   BTN_STATE_PRESSED);
+    if( pressed_keys & WS_KEY_X4) tamalib_set_button(BTN_LEFT,   BTN_STATE_PRESSED);
+    if( pressed_keys & WS_KEY_X3) tamalib_set_button(BTN_MIDDLE, BTN_STATE_PRESSED);
+    if( pressed_keys & WS_KEY_X2) tamalib_set_button(BTN_RIGHT,  BTN_STATE_PRESSED);
+    if( pressed_keys & WS_KEY_A ) tamalib_set_button(BTN_TAP,    BTN_STATE_PRESSED);
 
-    if(released_keys & WS_KEY_X4) tamalib_set_button(BTN_LEFT,    BTN_STATE_RELEASED);
-    if(released_keys & WS_KEY_X3) tamalib_set_button(BTN_MIDDLE,  BTN_STATE_RELEASED);
-    if(released_keys & WS_KEY_X2) tamalib_set_button(BTN_TAP,     BTN_STATE_RELEASED);
-    if(released_keys & WS_KEY_A ) tamalib_set_button(BTN_RIGHT,   BTN_STATE_RELEASED);
+    if(released_keys & WS_KEY_X4) tamalib_set_button(BTN_LEFT,   BTN_STATE_RELEASED);
+    if(released_keys & WS_KEY_X3) tamalib_set_button(BTN_MIDDLE, BTN_STATE_RELEASED);
+    if(released_keys & WS_KEY_X2) tamalib_set_button(BTN_RIGHT,  BTN_STATE_RELEASED);
+    if(released_keys & WS_KEY_A ) tamalib_set_button(BTN_TAP,    BTN_STATE_RELEASED);
 
     return 0;
 }
