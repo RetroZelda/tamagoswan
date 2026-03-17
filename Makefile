@@ -22,7 +22,7 @@ CBINDIRS	:= cbin
 # Defines passed to all files
 # ---------------------------
 
-DEFINES		:= # -DENABLE_LOGS
+DEFINES		:= -DENABLE_LOGS
 
 # Libraries
 # ---------
@@ -100,7 +100,7 @@ DEPS		:= $(OBJS:.o=.d)
 
 .PHONY: all clean usage
 
-all: $(ROM) compile_commands.json
+all: $(ROM) compile_commands.json usage
 
 $(ROM) $(ELF): $(ELF_STAGE1)
 	@echo "  ROM     $@"
