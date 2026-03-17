@@ -9,73 +9,72 @@
 #include "hal_ws.h"
 #include "memory.h"
 
+WSE_RESERVE_TILES(100, 0);
+
+#ifdef ENABLE_LOGS
+
 // defined as a part of libwsx
 // https://github.com/WonderfulToolchain/target-wswan-syslibs/blob/main/libwsx/assets/wsx_console_font_default.lua
 extern const uint8_t __wf_rom wsx_console_font_default[];
 
-WSE_RESERVE_TILES(512, 1024);
-
-volatile uint16_t g_vblank_ticks = 0;
-volatile uint16_t g_input_ticks = 0;
-
-__attribute__((interrupt))
-static void vblank_int_handler(void) 
-{
-    ++g_vblank_ticks;
-    ws_int_ack(WS_INT_ACK_VBLANK);
-}
-
-__attribute__((interrupt))
-static void key_scan_int_handler(void)
-{
-    ++g_input_ticks;
-    ws_int_ack(WS_INT_ACK_KEY_SCAN);
-};
-
-void vblank_wait(void) 
-{
-    uint16_t vblank_ticks_last = g_vblank_ticks;
-    while (g_vblank_ticks == vblank_ticks_last) 
-    {
-        ia16_halt();
-    }
-}
-
-#ifdef ENABLE_LOGS
 void setup_console()
 {
     wsx_console_config_t config;
-    config.tile_offset = 512 - 96;
+    config.tile_offset = 100 - 96; // WSE_RESERVE_TILES - char_count
     config.char_start = 32;
     config.char_count = 96;
     config.screen = WSX_CONSOLE_SCREEN2;
-    config.palette = 4; // On a "mono" model, only palettes 4-7 and 12-15 are translucent.
+    config.palette = 0xC; // On a "mono" model, only palettes 4-7 and 12-15 are translucent.
 
     outportw(WS_DISPLAY_CTRL_PORT, 0);
     wsx_zx0_decompress(WS_TILE_MEM(config.tile_offset), wsx_console_font_default);
     wsx_console_init(&config);
+
+    // hackily replace the start char for better clears
+    uint16_t tile = (WS_SCREEN_ATTR_TILE(config.tile_offset) & WS_SCREEN_ATTR_TILE_MASK)
+                    | (WS_SCREEN_ATTR_PALETTE(config.palette) & WS_SCREEN_ATTR_PALETTE_MASK)
+                    | (WS_SCREEN_ATTR_BANK(0) & WS_SCREEN_ATTR_BANK_MASK) // bank
+                    | (0)  // WS_SCREEN_ATTR_FLIP_H
+                    | (0); // WS_SCREEN_ATTR_FLIP_V
+
+    ws_screen_fill_tiles(&wse_screen2, tile, 0, 0, 32, 32);
 }
 #endif // ENABLE_LOGS
 
 void main(void)
-{    
+{   
     // setup the display and tiles
-	ws_display_set_control(0);
-	ws_display_set_screen_addresses(&wse_screen1, &wse_screen2);
+    ws_display_set_control(0);
+    ws_display_set_screen_addresses(&wse_screen1, &wse_screen2);
 
-	ws_display_scroll_screen1_to(16, -8);
-	ws_display_scroll_screen2_to(0, 0);
+    ws_display_scroll_screen1_to(16, -8);
+    ws_display_scroll_screen2_to(0, 0);
 
-    // setup the tiles and palettes
-    ws_display_set_shade_lut(WS_DISPLAY_SHADE_LUT_DEFAULT);
-    outportw(WS_SCR_PAL_0_PORT, WS_DISPLAY_MONO_PALETTE(0x00, 0x00, 0x00, 0x00));
-    outportw(WS_SCR_PAL_1_PORT, WS_DISPLAY_MONO_PALETTE(0x02, 0x02, 0x02, 0x02));
-    outportw(WS_SCR_PAL_2_PORT, WS_DISPLAY_MONO_PALETTE(0x04, 0x04, 0x04, 0x04));
-    outportw(WS_SCR_PAL_3_PORT, WS_DISPLAY_MONO_PALETTE(0x0F, 0x0F, 0x0F, 0x0F));
-    outportw(WS_SCR_PAL_4_PORT, WS_DISPLAY_MONO_PALETTE(0, 0x7, 0, 0));
+    // 2bpp on wsc for the extra ram 
+    if(ws_system_set_mode(WS_MODE_COLOR))
+    {
+        uint8_t col = 0;
+        for(uint8_t u = 0; u < 0x10; ++u)
+        {
+            col = 0xf - u;
+            for(uint8_t v = 0; v < 0x10; ++v)
+            {
+                *(WS_SCREEN_COLOR_MEM(u) + (v)) = WS_RGB(col, col, col);
+            }
+        }
+    }
+    else
+    {
+        // setup the tiles and palettes
+        ws_display_set_shade_lut(WS_DISPLAY_SHADE_LUT_DEFAULT);
+        outportw(WS_SCR_PAL_0_PORT, WS_DISPLAY_MONO_PALETTE(0x00, 0x00, 0x00, 0x00));
+        outportw(WS_SCR_PAL_1_PORT, WS_DISPLAY_MONO_PALETTE(0x02, 0x02, 0x02, 0x02));
+        outportw(WS_SCR_PAL_2_PORT, WS_DISPLAY_MONO_PALETTE(0x04, 0x04, 0x04, 0x04));
+        outportw(WS_SCR_PAL_3_PORT, WS_DISPLAY_MONO_PALETTE(0x0F, 0x0F, 0x0F, 0x0F));
+        outportw(WS_SCR_PAL_4_PORT, WS_DISPLAY_MONO_PALETTE(0x00, 0x07, 0x00, 0x00));
+    }
     memset(WS_TILE_MEM(0), 0xFF, sizeof(ws_display_tile_t));
     memset(WS_TILE_MEM(1), 0x00, sizeof(ws_display_tile_t));
-    
 #ifdef ENABLE_LOGS
     setup_console();
 
@@ -88,30 +87,5 @@ void main(void)
 
 
     hal_ws_initize();
-
-    // register our interrupts
-	ws_int_set_handler(WS_INT_VBLANK, vblank_int_handler);
-    ws_int_set_handler(WS_INT_KEY_SCAN, key_scan_int_handler);
-    ws_int_set_default_handler_hblank_timer(); // for the hal_ws_sleep_until timer
-	ws_int_enable(WS_INT_ENABLE_VBLANK | WS_INT_ENABLE_HBL_TIMER | WS_INT_ENABLE_KEY_SCAN);
-	ia16_enable_irq();
-
-    vblank_wait();
-
-    uint16_t vblank_ticks_last = g_vblank_ticks;
-    uint16_t input_ticks_last = g_input_ticks;    
-    while (1) 
-	{
-        if(vblank_ticks_last != g_vblank_ticks)
-        {
-            g_hal->update_screen();
-            vblank_ticks_last = g_vblank_ticks;
-        }
-        if(input_ticks_last != g_input_ticks)
-        {
-            g_hal->handler();
-            input_ticks_last = g_input_ticks;
-        }
-        tamalib_step();
-    }
+    hal_ws_loop();
 }

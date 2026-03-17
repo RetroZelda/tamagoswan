@@ -23,8 +23,6 @@
 #endif
 
 // functions that map into tamalib
-static void*        hal_ws_malloc(u32_t size);
-static void         hal_ws_free(void* ptr);
 static void         hal_ws_halt(void);
 static bool_t       hal_ws_is_log_enabled(log_level_t level);
 static void         hal_ws_log(log_level_t level, const char __wf_rom* buff, ...);
@@ -39,8 +37,8 @@ static int          hal_ws_handler(void);
 
 static hal_t ws_hal = 
 {
-    .malloc             = hal_ws_malloc,
-    .free               = hal_ws_free,
+    .malloc             = NULL, // Unneeded because we removed breakpoints 
+    .free               = NULL, // Unneeded because we removed breakpoints 
     .halt               = hal_ws_halt,
     .is_log_enabled     = hal_ws_is_log_enabled,
     .log                = hal_ws_log,
@@ -67,11 +65,13 @@ static uint8_t ws_iram icon_buffer[ICON_NUM];
 static uint16_t last_keys = 0;
 static uint16_t curr_keys = 0;
 
-static timestamp_t g_ticks = 0;
+static uint16_t g_loop_ticks = 0;
+volatile uint16_t g_vblank_ticks = 0;
 
 #ifdef ENABLE_LOGS
 #define SPRINTF_BUFFER_SIZE 128
 char ws_iram sprintf_dst_buffer[SPRINTF_BUFFER_SIZE];
+static uint8_t enable_logs = true;
 
 // strings for logging the level 
 DEFINE_STRING(log_level_memory,   " MEM");
@@ -95,6 +95,22 @@ DEFINE_STRING(log_generic_off, "off");
 #define TO_LCD_INDEX(x,y)  ((y) * LCD_WIDTH + (x))
 #define TICK_RATE (CLOCK / CLOCKS_PER_SEC)
 
+void vblank_wait(void) 
+{
+    uint16_t vblank_ticks_last = g_vblank_ticks;
+    while (g_vblank_ticks == vblank_ticks_last) 
+    {
+        ia16_halt();
+    }
+}
+
+__attribute__((interrupt))
+static void vblank_int_handler(void) 
+{
+    ++g_vblank_ticks;
+    ws_int_ack(WS_INT_ACK_VBLANK);
+}
+
 void hal_ws_initize()
 {
     memset(icon_buffer, 0x00, ICON_NUM);
@@ -103,24 +119,39 @@ void hal_ws_initize()
 	tamalib_register_hal(&ws_hal);
     tamalib_init(rom, CLOCK);
 
-    g_ticks = 0;
+    g_loop_ticks = 0;
 
 	last_keys = 0;
     curr_keys = 0;
+
+    // register our interrupts
+	ws_int_set_handler(WS_INT_VBLANK, vblank_int_handler);
+    ws_int_set_default_handler_key();
+    ws_int_set_default_handler_hblank_timer(); // for the hal_ws_sleep_until timer
+	ws_int_enable(WS_INT_ENABLE_VBLANK | WS_INT_ENABLE_HBL_TIMER | WS_INT_ENABLE_KEY_SCAN);
+	ia16_enable_irq();
+
+    vblank_wait();
 
     #ifdef USE_UART
     ws_uart_open(WS_UART_BAUD_RATE_9600);
     #endif
 }
 
-void* hal_ws_malloc(u32_t size)
+void hal_ws_loop(void)
 {
-    return NULL; // ts_memory_malloc(size);
-}
-
-void hal_ws_free(void* ptr)
-{
-    // ts_memory_free(ptr);
+    uint16_t vblank_ticks_last = g_vblank_ticks; 
+    while (1) 
+	{
+        ++g_loop_ticks;
+        if(vblank_ticks_last != g_vblank_ticks)
+        {
+            g_hal->update_screen();
+            g_hal->handler();
+            vblank_ticks_last = g_vblank_ticks;
+        }
+        tamalib_step();
+    }
 }
 
 void hal_ws_halt(void)
@@ -131,6 +162,11 @@ void hal_ws_halt(void)
 bool_t hal_ws_is_log_enabled(log_level_t level)
 {
 #ifdef ENABLE_LOGS
+    if(!enable_logs)
+    {
+        return false;
+    }
+
     switch(level)
     {
 	case LOG_ERROR: return true;
@@ -141,10 +177,8 @@ bool_t hal_ws_is_log_enabled(log_level_t level)
 	case LOG_OP:    return false;
 	case LOG_PIXEL: return false;
     }
-    return true;
-#else
-    return false;
 #endif // ENABLE_LOGS
+    return false;
 }
 
 void hal_ws_log(log_level_t level, const char __wf_rom* buff, ...)
@@ -219,18 +253,18 @@ void hal_ws_log(log_level_t level, const char __wf_rom* buff, ...)
 
 void hal_ws_sleep_until(timestamp_t ts)
 {
-    ws_timer_hblank_start_once(ts - g_ticks);
-    PRINT_LOG(LOG_INFO, log_halted, ts - g_ticks);
+    ws_timer_hblank_start_once((uint16_t)ts - g_loop_ticks);
+    PRINT_LOG(LOG_INFO, log_halted, (uint16_t)ts - g_loop_ticks);
     while(!ws_int_is_requested(WS_INT_STATUS_HBL_TIMER))
     {
         ia16_halt();
     }
-    g_ticks = ts;
+    g_loop_ticks = (uint16_t)ts;
 }
 
 timestamp_t hal_ws_get_timestamp(void)
 {
-    return g_ticks;
+    return (timestamp_t)g_loop_ticks;
 }
 
 void hal_ws_update_screen(void)
@@ -239,7 +273,7 @@ void hal_ws_update_screen(void)
     while(pixel)
     {
         uint16_t tile = (WS_SCREEN_ATTR_TILE(0x0) & WS_SCREEN_ATTR_TILE_MASK) // tile index
-                        | (WS_SCREEN_ATTR_PALETTE(pixel->pixel & 0x2) & WS_SCREEN_ATTR_PALETTE_MASK)
+                        | (WS_SCREEN_ATTR_PALETTE(pixel->pixel & 0x7) & WS_SCREEN_ATTR_PALETTE_MASK)
                         | (WS_SCREEN_ATTR_BANK(0) & WS_SCREEN_ATTR_BANK_MASK) // bank
                         | (0)  // WS_SCREEN_ATTR_FLIP_H
                         | (0); // WS_SCREEN_ATTR_FLIP_V
@@ -276,6 +310,26 @@ int hal_ws_handler(void)
     curr_keys = ws_keypad_scan();
     uint16_t pressed_keys = curr_keys & ~last_keys;
     uint16_t released_keys = ~curr_keys & last_keys;
+
+#ifdef ENABLE_LOGS
+
+    // releasing all the Y keys will toggle the logs
+    #define LOG_TOGGLE_MASK (WS_KEY_Y4 | WS_KEY_Y3 | WS_KEY_Y2 | WS_KEY_Y1)
+    if((released_keys & LOG_TOGGLE_MASK) == LOG_TOGGLE_MASK)
+    {
+        enable_logs = !enable_logs;
+        // wsx_console_clear();
+        // hackily replace the start char for better clears
+        uint16_t tile =   (WS_SCREEN_ATTR_TILE(0x4) & WS_SCREEN_ATTR_TILE_MASK)
+                        | (WS_SCREEN_ATTR_PALETTE(0xC) & WS_SCREEN_ATTR_PALETTE_MASK)
+                        | (WS_SCREEN_ATTR_BANK(0) & WS_SCREEN_ATTR_BANK_MASK) // bank
+                        | (0)  // WS_SCREEN_ATTR_FLIP_H
+                        | (0); // WS_SCREEN_ATTR_FLIP_V
+
+        ws_screen_fill_tiles(&wse_screen2, tile, 0, 0, 32, 32);
+    }
+
+#endif // ENABLE_LOGS
     
     if( pressed_keys & WS_KEY_X4) tamalib_set_button(BTN_LEFT,   BTN_STATE_PRESSED);
     if( pressed_keys & WS_KEY_X3) tamalib_set_button(BTN_MIDDLE, BTN_STATE_PRESSED);
