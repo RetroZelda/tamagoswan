@@ -4,8 +4,8 @@
 #include <wonderful.h>
 #include <ws.h>
 
-#define TOTAL_PIXELS 255 //LCD_WIDTH*LCD_HEIGHT
-#define BUFFER_CAPACITY TOTAL_PIXELS + 1
+#define TOTAL_PIXELS LCD_WIDTH*LCD_HEIGHT
+#define BUFFER_CAPACITY TOTAL_PIXELS
 
 ts_modified_pixel ws_iram modified_pixels[BUFFER_CAPACITY];
 static uint16_t ws_iram modified_pixels_head = 0;

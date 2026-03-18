@@ -60,7 +60,7 @@ typedef struct
 } hal_modified_pixel;
 
 
-static uint8_t ws_iram icon_buffer[ICON_NUM];
+static ws_sprite_t ws_iram* icons[ICON_NUM];
 
 static uint16_t last_keys = 0;
 static uint16_t curr_keys = 0;
@@ -71,7 +71,7 @@ volatile uint16_t g_vblank_ticks = 0;
 #ifdef ENABLE_LOGS
 #define SPRINTF_BUFFER_SIZE 128
 char ws_iram sprintf_dst_buffer[SPRINTF_BUFFER_SIZE];
-static uint8_t enable_logs = true;
+static uint8_t enable_logs = false;
 
 // strings for logging the level 
 DEFINE_STRING(log_level_memory,   " MEM");
@@ -91,9 +91,10 @@ DEFINE_STRING(log_generic_on, "on");
 DEFINE_STRING(log_generic_off, "off");
 #endif
 
-#define CLOCK (WS_SYSTEM_CLOCK_HZ >> 16)
 #define TO_LCD_INDEX(x,y)  ((y) * LCD_WIDTH + (x))
-#define TICK_RATE (CLOCK / CLOCKS_PER_SEC)
+#define TICK_RATE (WS_SYSTEM_CLOCK_HZ / CLOCKS_PER_SEC)
+#define ICON_POSITION_Y_ON (8 * 15)
+#define ICON_POSITION_Y_OFF (8 * 18)
 
 void vblank_wait(void) 
 {
@@ -113,16 +114,28 @@ static void vblank_int_handler(void)
 
 void hal_ws_initize()
 {
-    memset(icon_buffer, 0x00, ICON_NUM);
 
     const u12_t __wf_rom* rom = (const u12_t __wf_rom*)tamagochi_rom_p1_swapped_data;
 	tamalib_register_hal(&ws_hal);
-    tamalib_init(rom, CLOCK);
+    tamalib_init(rom, WS_SYSTEM_CLOCK_HZ >> 8);
 
     g_loop_ticks = 0;
 
 	last_keys = 0;
     curr_keys = 0;
+
+    // setup icon sprites
+    outportw(WS_SPR_FIRST_PORT, 0);
+    outportw(WS_SPR_COUNT_PORT, (uint8_t)ICON_NUM);
+    ws_display_set_screen_addresses(&wse_screen1, &wse_screen2); // NOTE: setting WS_SPR_COUNT_PORT resets the screen addresses for some reason.
+    for(uint8_t icon_index = 0; icon_index < ICON_NUM; ++icon_index)
+    {
+        icons[icon_index] = wse_sprites1.entry + icon_index;
+        icons[icon_index]->x = icon_index * 24;
+        icons[icon_index]->y = ICON_POSITION_Y_ON;
+        icons[icon_index]->attr =   (WS_SPRITE_ATTR_TILE(20 + icon_index) & WS_SPRITE_ATTR_TILE_MASK) | 
+                                    (WS_SPRITE_ATTR_PALETTE(0xC) & WS_SPRITE_ATTR_PALETTE_MASK);
+    }
 
     // register our interrupts
 	ws_int_set_handler(WS_INT_VBLANK, vblank_int_handler);
@@ -151,6 +164,7 @@ void hal_ws_loop(void)
             vblank_ticks_last = g_vblank_ticks;
         }
         tamalib_step();
+
     }
 }
 
@@ -174,7 +188,7 @@ bool_t hal_ws_is_log_enabled(log_level_t level)
     case LOG_MEMORY:return false;
 	case LOG_CPU:   return false;
 	case LOG_INT:   return true;
-	case LOG_OP:    return false;
+	case LOG_OP:    return true;
 	case LOG_PIXEL: return false;
     }
 #endif // ENABLE_LOGS
@@ -290,7 +304,7 @@ void hal_ws_set_lcd_matrix(u8_t x, u8_t y, bool_t val)
 
 void hal_ws_set_lcd_icon(u8_t icon, bool_t val)
 {
-    icon_buffer[icon] = val != 0 ? 0xFF : 0x0;
+    icons[icon]->y = val != 0 ? ICON_POSITION_Y_ON : ICON_POSITION_Y_OFF;
     //PRINT_LOG(LOG_INFO, log_icon_write, icon, val != 0 ? log_generic_on : log_generic_off);
 }
 

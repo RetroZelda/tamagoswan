@@ -12,7 +12,6 @@ typedef struct
     uint8_t x;
     uint8_t y;
     uint8_t pixel;
-    uint8_t __padding;
 } ts_modified_pixel;
 
 bool ts_pixel_push(uint8_t x, uint8_t y, uint8_t state);

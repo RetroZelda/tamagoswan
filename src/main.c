@@ -5,7 +5,6 @@
 #include <ws/display.h>
 #include "wsx/zx0.h"
 
-#include <tamalib/tamalib.h>
 #include "hal_ws.h"
 #include "memory.h"
 
@@ -44,7 +43,8 @@ void setup_console()
 void main(void)
 {   
     // setup the display and tiles
-    ws_display_set_control(0);
+    ws_display_set_control(0);;
+    ws_display_set_sprite_address(&wse_sprites1);
     ws_display_set_screen_addresses(&wse_screen1, &wse_screen2);
 
     ws_display_scroll_screen1_to(16, -8);
@@ -79,10 +79,13 @@ void main(void)
     setup_console();
 
     // enable screen 1 for the tamagochi and screen 2 for logging
-	ws_display_set_control(WS_DISPLAY_CTRL_SCR1_ENABLE | WS_DISPLAY_CTRL_SCR2_ENABLE);
+	ws_display_set_control( WS_DISPLAY_CTRL_SCR1_ENABLE | 
+                            WS_DISPLAY_CTRL_SCR2_ENABLE | 
+                            WS_DISPLAY_CTRL_SPR_ENABLE);
 #else
     // enable screen 1 for the tamagochi
-	ws_display_set_control(WS_DISPLAY_CTRL_SCR1_ENABLE);
+	ws_display_set_control( WS_DISPLAY_CTRL_SCR1_ENABLE |  
+                            WS_DISPLAY_CTRL_SPR_ENABLE);
 #endif // ENABLE_LOGS
 
 
