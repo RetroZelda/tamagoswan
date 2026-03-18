@@ -8,6 +8,7 @@
 #include <wsx/console.h>
 #include <ws/util.h>
 
+#include <stdcountof.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <time.h>
@@ -63,7 +64,7 @@ typedef struct
 
 
 #define BITS_TO_BYTES(bits)   (((bits) + 7) / 8)
-static uint8_t ws_iram pixels[BITS_TO_BYTES(LCD_WIDTH*LCD_HEIGHT)];
+static uint8_t ws_iram pixels[BITS_TO_BYTES(LCD_WIDTH*LCD_HEIGHT)]; // TODO: Not holding these as bits could be a major speedup in rendering... however rendering isnt a problem anymore so whatevs
 static hal_ws_icon ws_iram* icons[ICON_NUM];
 
 static uint16_t last_keys = 0;
@@ -106,6 +107,37 @@ DEFINE_STRING(log_generic_off, "off");
 #define ICON_POSITION_Y_ON_BOTTOM 115
 #define ICON_POSITION_Y_OFF (8 * 18)
 
+// helpers for dealing with pixels
+#define IS_PIXEL_SET(arr, p)      ((arr)[(p)>>3] &   (1u << ((p)&7)))
+#define SET_PIXEL_ON(arr, p)      ((arr)[(p)>>3] |=  (1u << ((p)&7)))
+#define SET_PIXEL_OFF(arr, p)     ((arr)[(p)>>3] &= ~(1u << ((p)&7)))
+#define TOGGLE_PIXEL(arr, p)      ((arr)[(p)>>3] ^=  (1u << ((p)&7)))
+#define SET_PIXEL(arr, p, v)      ((arr)[(p)>>3] =   ((arr)[(p)>>3] & ~(1 << ((p)&7))) | ((!!(v)) << ((p)&7)))
+#define GET_TILE_INDEX(a, b,  c, d) ((a) ? 1 : 0) | ((b) ? 2 : 0) | ((c) ? 4 : 0) | ((d) ? 8 : 0)
+#define GET_SCREEN_TILE_FROM_PIXEL(x, y) ((x >> 1) + (x & 1) * LCD_WIDTH) + ((y >> 1) + (y & 1))
+
+// buffers to optimize screen draw
+static uint8_t ws_iram modified_tiles[(LCD_WIDTH * LCD_HEIGHT) >> 2];
+static const uint16_t __wf_rom tile_lookup[16] =
+{
+    (WS_SCREEN_ATTR_TILE(0x0) & WS_SCREEN_ATTR_TILE_MASK) | (WS_SCREEN_ATTR_PALETTE(0x7) & WS_SCREEN_ATTR_PALETTE_MASK),
+    (WS_SCREEN_ATTR_TILE(0x1) & WS_SCREEN_ATTR_TILE_MASK) | (WS_SCREEN_ATTR_PALETTE(0x7) & WS_SCREEN_ATTR_PALETTE_MASK),
+    (WS_SCREEN_ATTR_TILE(0x2) & WS_SCREEN_ATTR_TILE_MASK) | (WS_SCREEN_ATTR_PALETTE(0x7) & WS_SCREEN_ATTR_PALETTE_MASK),
+    (WS_SCREEN_ATTR_TILE(0x3) & WS_SCREEN_ATTR_TILE_MASK) | (WS_SCREEN_ATTR_PALETTE(0x7) & WS_SCREEN_ATTR_PALETTE_MASK),
+    (WS_SCREEN_ATTR_TILE(0x4) & WS_SCREEN_ATTR_TILE_MASK) | (WS_SCREEN_ATTR_PALETTE(0x7) & WS_SCREEN_ATTR_PALETTE_MASK),
+    (WS_SCREEN_ATTR_TILE(0x5) & WS_SCREEN_ATTR_TILE_MASK) | (WS_SCREEN_ATTR_PALETTE(0x7) & WS_SCREEN_ATTR_PALETTE_MASK),
+    (WS_SCREEN_ATTR_TILE(0x6) & WS_SCREEN_ATTR_TILE_MASK) | (WS_SCREEN_ATTR_PALETTE(0x7) & WS_SCREEN_ATTR_PALETTE_MASK),
+    (WS_SCREEN_ATTR_TILE(0x7) & WS_SCREEN_ATTR_TILE_MASK) | (WS_SCREEN_ATTR_PALETTE(0x7) & WS_SCREEN_ATTR_PALETTE_MASK),
+    (WS_SCREEN_ATTR_TILE(0x8) & WS_SCREEN_ATTR_TILE_MASK) | (WS_SCREEN_ATTR_PALETTE(0x7) & WS_SCREEN_ATTR_PALETTE_MASK),
+    (WS_SCREEN_ATTR_TILE(0x9) & WS_SCREEN_ATTR_TILE_MASK) | (WS_SCREEN_ATTR_PALETTE(0x7) & WS_SCREEN_ATTR_PALETTE_MASK),
+    (WS_SCREEN_ATTR_TILE(0xA) & WS_SCREEN_ATTR_TILE_MASK) | (WS_SCREEN_ATTR_PALETTE(0x7) & WS_SCREEN_ATTR_PALETTE_MASK),
+    (WS_SCREEN_ATTR_TILE(0xB) & WS_SCREEN_ATTR_TILE_MASK) | (WS_SCREEN_ATTR_PALETTE(0x7) & WS_SCREEN_ATTR_PALETTE_MASK),
+    (WS_SCREEN_ATTR_TILE(0xC) & WS_SCREEN_ATTR_TILE_MASK) | (WS_SCREEN_ATTR_PALETTE(0x7) & WS_SCREEN_ATTR_PALETTE_MASK),
+    (WS_SCREEN_ATTR_TILE(0xD) & WS_SCREEN_ATTR_TILE_MASK) | (WS_SCREEN_ATTR_PALETTE(0x7) & WS_SCREEN_ATTR_PALETTE_MASK),
+    (WS_SCREEN_ATTR_TILE(0xE) & WS_SCREEN_ATTR_TILE_MASK) | (WS_SCREEN_ATTR_PALETTE(0x7) & WS_SCREEN_ATTR_PALETTE_MASK),
+    (WS_SCREEN_ATTR_TILE(0xF) & WS_SCREEN_ATTR_TILE_MASK) | (WS_SCREEN_ATTR_PALETTE(0x7) & WS_SCREEN_ATTR_PALETTE_MASK)
+}; 
+
 void vblank_wait(void) 
 {
     uint16_t vblank_ticks_last = g_vblank_ticks;
@@ -125,9 +157,13 @@ static void vblank_int_handler(void)
 void hal_ws_initize()
 {
     uint8_t sprite_x, sprite_y;
+    uint8_t counter;
+    uint8_t icon_index;
+    uint16_t tile_index;
     ws_sprite_t ws_iram* sprite;
 
     const u12_t __wf_rom* rom = (const u12_t __wf_rom*)tamagochi_rom_p1_swapped_data;
+
 	tamalib_register_hal(&ws_hal);
     tamalib_init(rom, WS_SYSTEM_CLOCK_HZ >> 8);
 
@@ -143,8 +179,11 @@ void hal_ws_initize()
     outportw(WS_SPR_COUNT_PORT, (uint8_t)(ICON_NUM * SPRITE_ROWS_PER_ICON * SPRITE_COLS_PER_ICON));
     ws_display_set_screen_addresses(&wse_screen1, &wse_screen2); // NOTE: setting WS_SPR_COUNT_PORT resets the screen addresses for some reason.
 
-    uint8_t counter = 0;
-    for(uint8_t icon_index = 0; icon_index < ICON_NUM; ++icon_index)
+    // clear our pixel bit buffers
+    memset(pixels, 0x0, BITS_TO_BYTES(LCD_WIDTH*LCD_HEIGHT));
+
+    counter = 0;
+    for(icon_index = 0; icon_index < ICON_NUM; ++icon_index)
     {
         icons[icon_index]->x = ICON_POSITION_X_OFFSET + ((icon_index % 4) * SPRITE_COLS_PER_ICON * ICON_POSITION_X_SPREAD);
         icons[icon_index]->y = icon_index < 4 ? ICON_POSITION_Y_ON_TOP : ICON_POSITION_Y_ON_BOTTOM;
@@ -154,7 +193,7 @@ void hal_ws_initize()
             for(sprite_y = 0; sprite_y < SPRITE_ROWS_PER_ICON; ++sprite_y)
             {
                 sprite = wse_sprites1.entry + counter++;
-                uint16_t tile_index = 16 + (sprite_y * ICON_NUM * SPRITE_COLS_PER_ICON) +
+                tile_index = 16 + (sprite_y * ICON_NUM * SPRITE_COLS_PER_ICON) +
                       (icon_index * SPRITE_COLS_PER_ICON) +
                       sprite_x;
 
@@ -215,13 +254,13 @@ bool_t hal_ws_is_log_enabled(log_level_t level)
 
     switch(level)
     {
-	case LOG_ERROR: return true;
-	case LOG_INFO:  return true;
+	case LOG_ERROR: return false;
+	case LOG_INFO:  return false;
     case LOG_MEMORY:return false;
 	case LOG_CPU:   return false;
-	case LOG_INT:   return true;
-	case LOG_OP:    return true;
-	case LOG_PIXEL: return false;
+	case LOG_INT:   return false;
+	case LOG_OP:    return false;
+	case LOG_PIXEL: return true;
     }
 #endif // ENABLE_LOGS
     return false;
@@ -313,12 +352,6 @@ timestamp_t hal_ws_get_timestamp(void)
     return (timestamp_t)g_loop_ticks;
 }
 
-#define IS_PIXEL_SET(arr, p)      ((arr)[(p)>>3] &   (1u << ((p)&7)))
-#define SET_PIXEL_ON(arr, p)      ((arr)[(p)>>3] |=  (1u << ((p)&7)))
-#define SET_PIXEL_OFF(arr, p)     ((arr)[(p)>>3] &= ~(1u << ((p)&7)))
-#define TOGGLE_PIXEL(arr, p)      ((arr)[(p)>>3] ^=  (1u << ((p)&7)))
-#define SET_PIXEL(arr, p, v)      ((arr)[(p)>>3] =   ((arr)[(p)>>3] & ~(1 << ((p)&7))) | ((!!(v)) << ((p)&7)))
-#define GET_TILE_INDEX(a, b,  c, d) ((a) ? 1 : 0) | ((b) ? 2 : 0) | ((c) ? 4 : 0) | ((d) ? 8 : 0)
 void hal_ws_update_screen(void)
 {      
    uint8_t row = 0;
@@ -328,27 +361,28 @@ void hal_ws_update_screen(void)
         col = 0;
         for(; col < LCD_WIDTH >> 1; ++col)
         {
-            uint8_t bit_a = IS_PIXEL_SET(pixels, (((col << 1) + 1) * LCD_HEIGHT) + ((row << 1) + 0));
-            uint8_t bit_b = IS_PIXEL_SET(pixels, (((col << 1) + 0) * LCD_HEIGHT) + ((row << 1) + 0));
-            uint8_t bit_c = IS_PIXEL_SET(pixels, (((col << 1) + 1) * LCD_HEIGHT) + ((row << 1) + 1));
-            uint8_t bit_d = IS_PIXEL_SET(pixels, (((col << 1) + 0) * LCD_HEIGHT) + ((row << 1) + 1));
-            uint16_t tile_index = GET_TILE_INDEX(bit_a, bit_b, bit_c, bit_d);
+            if(modified_tiles[(col * (LCD_HEIGHT > 1)) + row] == 0)
+            {
+                continue;
+            }
 
-            uint16_t tile = (WS_SCREEN_ATTR_TILE(tile_index) & WS_SCREEN_ATTR_TILE_MASK) // tile index
-                            | (WS_SCREEN_ATTR_PALETTE(0x7) & WS_SCREEN_ATTR_PALETTE_MASK)
-                            | (WS_SCREEN_ATTR_BANK(0) & WS_SCREEN_ATTR_BANK_MASK) // bank
-                            | (0)  // WS_SCREEN_ATTR_FLIP_H
-                            | (0); // WS_SCREEN_ATTR_FLIP_V
-            ws_screen_put_tile(&wse_screen1, tile, SCREEN_OFFSET_X + col, SCREEN_OFFSET_Y + row);
+            uint16_t tile_index = GET_TILE_INDEX(IS_PIXEL_SET(pixels, (((col << 1) + 1) * LCD_HEIGHT) + ((row << 1) + 0)), 
+                                                 IS_PIXEL_SET(pixels, (((col << 1) + 0) * LCD_HEIGHT) + ((row << 1) + 0)), 
+                                                 IS_PIXEL_SET(pixels, (((col << 1) + 1) * LCD_HEIGHT) + ((row << 1) + 1)), 
+                                                 IS_PIXEL_SET(pixels, (((col << 1) + 0) * LCD_HEIGHT) + ((row << 1) + 1)));
+
+            ws_screen_put_tile(&wse_screen1, tile_lookup[tile_index], SCREEN_OFFSET_X + col, SCREEN_OFFSET_Y + row);
         }
    }
+   memset(modified_tiles, 0x0, countof(modified_tiles));
 }
 
 void hal_ws_set_lcd_matrix(u8_t x, u8_t y, bool_t val)
 {
     uint16_t target_bit = (x * LCD_HEIGHT) + y;
     SET_PIXEL(pixels, target_bit, val != 0 ? 0xF : 0x0);
-    PRINT_LOG(LOG_PIXEL, log_pixel_write, x, y, val);
+    modified_tiles[(x * (LCD_HEIGHT > 1)) + y] |= 0xFF;
+    PRINT_LOG(LOG_PIXEL, log_pixel_write, x, y, val != 0 ? 1 : 0);
 }
 
 void hal_ws_set_lcd_icon(u8_t icon, bool_t val)
