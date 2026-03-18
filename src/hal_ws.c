@@ -12,10 +12,8 @@
 #include <stdio.h>
 #include <time.h>
 
-#include "modified_pixel.h"
 #include "rom/rom.h"
 #include "utility.h"
-#include "memory.h"
 
 // #define USE_UART
 #ifdef USE_UART
@@ -52,21 +50,30 @@ static hal_t ws_hal =
     .handler            = hal_ws_handler,
 };
 
-typedef struct
+#define SPRITE_ROWS_PER_ICON 3
+#define SPRITE_COLS_PER_ICON 3
+
+typedef struct 
 {
+    ws_sprite_t ws_iram* sprites[SPRITE_ROWS_PER_ICON][SPRITE_COLS_PER_ICON];
     uint8_t x;
     uint8_t y;
-    uint8_t pixel;
-} hal_modified_pixel;
+    uint8_t visible;
+} hal_ws_icon;
 
 
-static ws_sprite_t ws_iram* icons[ICON_NUM];
+#define BITS_TO_BYTES(bits)   (((bits) + 7) / 8)
+static uint8_t ws_iram pixels[BITS_TO_BYTES(LCD_WIDTH*LCD_HEIGHT)];
+static hal_ws_icon ws_iram* icons[ICON_NUM];
 
 static uint16_t last_keys = 0;
 static uint16_t curr_keys = 0;
 
 static uint16_t g_loop_ticks = 0;
 volatile uint16_t g_vblank_ticks = 0;
+
+#define SCREEN_OFFSET_X 6
+#define SCREEN_OFFSET_Y 5
 
 #ifdef ENABLE_LOGS
 #define SPRINTF_BUFFER_SIZE 128
@@ -93,7 +100,10 @@ DEFINE_STRING(log_generic_off, "off");
 
 #define TO_LCD_INDEX(x,y)  ((y) * LCD_WIDTH + (x))
 #define TICK_RATE (WS_SYSTEM_CLOCK_HZ / CLOCKS_PER_SEC)
-#define ICON_POSITION_Y_ON (8 * 15)
+#define ICON_POSITION_X_OFFSET 12
+#define ICON_POSITION_X_SPREAD 20
+#define ICON_POSITION_Y_ON_TOP 3
+#define ICON_POSITION_Y_ON_BOTTOM 115
 #define ICON_POSITION_Y_OFF (8 * 18)
 
 void vblank_wait(void) 
@@ -114,6 +124,8 @@ static void vblank_int_handler(void)
 
 void hal_ws_initize()
 {
+    uint8_t sprite_x, sprite_y;
+    ws_sprite_t ws_iram* sprite;
 
     const u12_t __wf_rom* rom = (const u12_t __wf_rom*)tamagochi_rom_p1_swapped_data;
 	tamalib_register_hal(&ws_hal);
@@ -124,17 +136,37 @@ void hal_ws_initize()
 	last_keys = 0;
     curr_keys = 0;
 
-    // setup icon sprites
+    // setup icons
+    // icons are 3x3 sprites where sprite tiles are loaded by each row
+    // so contiguous tiles are s0s0s0 s1s1s1 s2s2s2 ... n0n1n2
     outportw(WS_SPR_FIRST_PORT, 0);
-    outportw(WS_SPR_COUNT_PORT, (uint8_t)ICON_NUM);
+    outportw(WS_SPR_COUNT_PORT, (uint8_t)(ICON_NUM * SPRITE_ROWS_PER_ICON * SPRITE_COLS_PER_ICON));
     ws_display_set_screen_addresses(&wse_screen1, &wse_screen2); // NOTE: setting WS_SPR_COUNT_PORT resets the screen addresses for some reason.
+
+    uint8_t counter = 0;
     for(uint8_t icon_index = 0; icon_index < ICON_NUM; ++icon_index)
     {
-        icons[icon_index] = wse_sprites1.entry + icon_index;
-        icons[icon_index]->x = icon_index * 24;
-        icons[icon_index]->y = ICON_POSITION_Y_ON;
-        icons[icon_index]->attr =   (WS_SPRITE_ATTR_TILE(20 + icon_index) & WS_SPRITE_ATTR_TILE_MASK) | 
-                                    (WS_SPRITE_ATTR_PALETTE(0xC) & WS_SPRITE_ATTR_PALETTE_MASK);
+        icons[icon_index]->x = ICON_POSITION_X_OFFSET + ((icon_index % 4) * SPRITE_COLS_PER_ICON * ICON_POSITION_X_SPREAD);
+        icons[icon_index]->y = icon_index < 4 ? ICON_POSITION_Y_ON_TOP : ICON_POSITION_Y_ON_BOTTOM;
+        icons[icon_index]->visible = 0;
+        for(sprite_x = 0; sprite_x < SPRITE_COLS_PER_ICON; ++sprite_x)
+        {
+            for(sprite_y = 0; sprite_y < SPRITE_ROWS_PER_ICON; ++sprite_y)
+            {
+                sprite = wse_sprites1.entry + counter++;
+                uint16_t tile_index = 16 + (sprite_y * ICON_NUM * SPRITE_COLS_PER_ICON) +
+                      (icon_index * SPRITE_COLS_PER_ICON) +
+                      sprite_x;
+
+                sprite->x = icons[icon_index]->x + (sprite_x * 8);
+                sprite->y = icons[icon_index]->visible != 0 ? icons[icon_index]->y + (sprite_y * 8) : ICON_POSITION_Y_OFF;
+                sprite->attr = ( WS_SPRITE_ATTR_TILE(tile_index) & WS_SPRITE_ATTR_TILE_MASK) | 
+                                (WS_SPRITE_ATTR_PALETTE(0x7) & WS_SPRITE_ATTR_PALETTE_MASK);
+
+                icons[icon_index]->sprites[sprite_x][sprite_y] = sprite;
+            }
+
+        }
     }
 
     // register our interrupts
@@ -281,31 +313,59 @@ timestamp_t hal_ws_get_timestamp(void)
     return (timestamp_t)g_loop_ticks;
 }
 
+#define IS_PIXEL_SET(arr, p)      ((arr)[(p)>>3] &   (1u << ((p)&7)))
+#define SET_PIXEL_ON(arr, p)      ((arr)[(p)>>3] |=  (1u << ((p)&7)))
+#define SET_PIXEL_OFF(arr, p)     ((arr)[(p)>>3] &= ~(1u << ((p)&7)))
+#define TOGGLE_PIXEL(arr, p)      ((arr)[(p)>>3] ^=  (1u << ((p)&7)))
+#define SET_PIXEL(arr, p, v)      ((arr)[(p)>>3] =   ((arr)[(p)>>3] & ~(1 << ((p)&7))) | ((!!(v)) << ((p)&7)))
+#define GET_TILE_INDEX(a, b,  c, d) ((a) ? 1 : 0) | ((b) ? 2 : 0) | ((c) ? 4 : 0) | ((d) ? 8 : 0)
 void hal_ws_update_screen(void)
-{        
-    const ts_modified_pixel* pixel = ts_pixel_pop();
-    while(pixel)
-    {
-        uint16_t tile = (WS_SCREEN_ATTR_TILE(0x0) & WS_SCREEN_ATTR_TILE_MASK) // tile index
-                        | (WS_SCREEN_ATTR_PALETTE(pixel->pixel & 0x7) & WS_SCREEN_ATTR_PALETTE_MASK)
-                        | (WS_SCREEN_ATTR_BANK(0) & WS_SCREEN_ATTR_BANK_MASK) // bank
-                        | (0)  // WS_SCREEN_ATTR_FLIP_H
-                        | (0); // WS_SCREEN_ATTR_FLIP_V
-        ws_screen_put_tile(&wse_screen1, tile, pixel->x, pixel->y);
-        pixel = ts_pixel_pop();
-    }    
+{      
+   uint8_t row = 0;
+   uint8_t col = 0;
+   for(; row < LCD_HEIGHT >> 1; ++row)
+   {
+        col = 0;
+        for(; col < LCD_WIDTH >> 1; ++col)
+        {
+            uint8_t bit_a = IS_PIXEL_SET(pixels, (((col << 1) + 1) * LCD_HEIGHT) + ((row << 1) + 0));
+            uint8_t bit_b = IS_PIXEL_SET(pixels, (((col << 1) + 0) * LCD_HEIGHT) + ((row << 1) + 0));
+            uint8_t bit_c = IS_PIXEL_SET(pixels, (((col << 1) + 1) * LCD_HEIGHT) + ((row << 1) + 1));
+            uint8_t bit_d = IS_PIXEL_SET(pixels, (((col << 1) + 0) * LCD_HEIGHT) + ((row << 1) + 1));
+            uint16_t tile_index = GET_TILE_INDEX(bit_a, bit_b, bit_c, bit_d);
+
+            uint16_t tile = (WS_SCREEN_ATTR_TILE(tile_index) & WS_SCREEN_ATTR_TILE_MASK) // tile index
+                            | (WS_SCREEN_ATTR_PALETTE(0x7) & WS_SCREEN_ATTR_PALETTE_MASK)
+                            | (WS_SCREEN_ATTR_BANK(0) & WS_SCREEN_ATTR_BANK_MASK) // bank
+                            | (0)  // WS_SCREEN_ATTR_FLIP_H
+                            | (0); // WS_SCREEN_ATTR_FLIP_V
+            ws_screen_put_tile(&wse_screen1, tile, SCREEN_OFFSET_X + col, SCREEN_OFFSET_Y + row);
+        }
+   }
 }
 
 void hal_ws_set_lcd_matrix(u8_t x, u8_t y, bool_t val)
 {
-    ts_pixel_push(x, y, val != 0 ? 0xFF : 0x0);
+    // ts_pixel_push(x, y, val != 0 ? 0xFF : 0x0);
+    uint16_t target_bit = (x * LCD_HEIGHT) + y;
+    SET_PIXEL(pixels, target_bit, val != 0 ? 0xF : 0x0);
     PRINT_LOG(LOG_PIXEL, log_pixel_write, x, y, val);
 }
 
 void hal_ws_set_lcd_icon(u8_t icon, bool_t val)
 {
-    icons[icon]->y = val != 0 ? ICON_POSITION_Y_ON : ICON_POSITION_Y_OFF;
-    //PRINT_LOG(LOG_INFO, log_icon_write, icon, val != 0 ? log_generic_on : log_generic_off);
+    icons[icon]->visible = val;
+    return; // TEMP UNTIL I GET THE ICONS ALIGNED CORRECTLY
+    for(uint8_t sprite_x = 0; sprite_x < SPRITE_COLS_PER_ICON; ++sprite_x)
+    {
+        for(uint8_t sprite_y = 0; sprite_y < SPRITE_ROWS_PER_ICON; ++sprite_y)
+        {
+            icons[icon]->sprites[sprite_x][sprite_y]->x = icons[icon]->x + (sprite_x * 8);
+            icons[icon]->sprites[sprite_x][sprite_y]->y = val != 0 ? icons[icon]->y + (sprite_y * 8) : ICON_POSITION_Y_OFF;
+        }
+    }
+    
+    PRINT_LOG(LOG_INFO, log_icon_write, icon, val != 0 ? log_generic_on : log_generic_off);
 }
 
 void hal_ws_set_frequency(u32_t freq)
