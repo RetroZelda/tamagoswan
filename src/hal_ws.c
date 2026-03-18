@@ -356,6 +356,8 @@ void hal_ws_update_screen(void)
 {      
    uint8_t row = 0;
    uint8_t col = 0;
+    uint8_t dbl_row = 0;
+    uint8_t dbl_col = 0;
    for(; row < LCD_HEIGHT >> 1; ++row)
    {
         col = 0;
@@ -365,11 +367,13 @@ void hal_ws_update_screen(void)
             {
                 continue;
             }
-
-            uint16_t tile_index = GET_TILE_INDEX(IS_PIXEL_SET(pixels, (((col << 1) + 1) * LCD_HEIGHT) + ((row << 1) + 0)), 
-                                                 IS_PIXEL_SET(pixels, (((col << 1) + 0) * LCD_HEIGHT) + ((row << 1) + 0)), 
-                                                 IS_PIXEL_SET(pixels, (((col << 1) + 1) * LCD_HEIGHT) + ((row << 1) + 1)), 
-                                                 IS_PIXEL_SET(pixels, (((col << 1) + 0) * LCD_HEIGHT) + ((row << 1) + 1)));
+            
+            dbl_row = row << 1;
+            dbl_col = col << 1;
+            uint16_t tile_index = GET_TILE_INDEX(IS_PIXEL_SET(pixels, ((dbl_col + 1) * LCD_HEIGHT) + (dbl_row + 0)), 
+                                                 IS_PIXEL_SET(pixels, ((dbl_col + 0) * LCD_HEIGHT) + (dbl_row + 0)), 
+                                                 IS_PIXEL_SET(pixels, ((dbl_col + 1) * LCD_HEIGHT) + (dbl_row + 1)), 
+                                                 IS_PIXEL_SET(pixels, ((dbl_col + 0) * LCD_HEIGHT) + (dbl_row + 1)));
 
             ws_screen_put_tile(&wse_screen1, tile_lookup[tile_index], SCREEN_OFFSET_X + col, SCREEN_OFFSET_Y + row);
         }
