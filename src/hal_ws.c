@@ -346,7 +346,6 @@ void hal_ws_update_screen(void)
 
 void hal_ws_set_lcd_matrix(u8_t x, u8_t y, bool_t val)
 {
-    // ts_pixel_push(x, y, val != 0 ? 0xFF : 0x0);
     uint16_t target_bit = (x * LCD_HEIGHT) + y;
     SET_PIXEL(pixels, target_bit, val != 0 ? 0xF : 0x0);
     PRINT_LOG(LOG_PIXEL, log_pixel_write, x, y, val);
@@ -355,7 +354,6 @@ void hal_ws_set_lcd_matrix(u8_t x, u8_t y, bool_t val)
 void hal_ws_set_lcd_icon(u8_t icon, bool_t val)
 {
     icons[icon]->visible = val;
-    return; // TEMP UNTIL I GET THE ICONS ALIGNED CORRECTLY
     for(uint8_t sprite_x = 0; sprite_x < SPRITE_COLS_PER_ICON; ++sprite_x)
     {
         for(uint8_t sprite_y = 0; sprite_y < SPRITE_ROWS_PER_ICON; ++sprite_y)
