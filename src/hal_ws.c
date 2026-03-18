@@ -212,7 +212,7 @@ void hal_ws_initize()
 	ws_int_set_handler(WS_INT_VBLANK, vblank_int_handler);
     ws_int_set_default_handler_key();
     ws_int_set_default_handler_hblank_timer(); // for the hal_ws_sleep_until timer
-	ws_int_enable(WS_INT_ENABLE_VBLANK | WS_INT_ENABLE_HBL_TIMER | WS_INT_ENABLE_KEY_SCAN);
+	ws_int_enable(WS_INT_ENABLE_VBLANK | WS_INT_ENABLE_KEY_SCAN);
 	ia16_enable_irq();
 
     vblank_wait();
@@ -227,15 +227,14 @@ void hal_ws_loop(void)
     uint16_t vblank_ticks_last = g_vblank_ticks; 
     while (1) 
 	{
-        ++g_loop_ticks;
         if(vblank_ticks_last != g_vblank_ticks)
         {
             g_hal->update_screen();
             g_hal->handler();
             vblank_ticks_last = g_vblank_ticks;
+        ++g_loop_ticks;
         }
         tamalib_step();
-
     }
 }
 
@@ -338,6 +337,7 @@ void hal_ws_log(log_level_t level, const char __wf_rom* buff, ...)
 
 void hal_ws_sleep_until(timestamp_t ts)
 {
+	ws_int_enable(WS_INT_ENABLE_HBL_TIMER);
     ws_timer_hblank_start_once((uint16_t)ts - g_loop_ticks);
     PRINT_LOG(LOG_INFO, log_halted, (uint16_t)ts - g_loop_ticks);
     while(!ws_int_is_requested(WS_INT_STATUS_HBL_TIMER))
@@ -352,14 +352,19 @@ timestamp_t hal_ws_get_timestamp(void)
     return (timestamp_t)g_loop_ticks;
 }
 
+uint8_t ws_iram g_screen_needs_update = 0;
 void hal_ws_update_screen(void)
 {      
-   uint8_t row = 0;
-   uint8_t col = 0;
+    if(g_screen_needs_update == 0)
+    {
+        return;
+    }
+    uint8_t row = 0;
+    uint8_t col = 0;
     uint8_t dbl_row = 0;
     uint8_t dbl_col = 0;
-   for(; row < LCD_HEIGHT >> 1; ++row)
-   {
+    for(; row < LCD_HEIGHT >> 1; ++row)
+    {
         col = 0;
         for(; col < LCD_WIDTH >> 1; ++col)
         {
@@ -371,14 +376,15 @@ void hal_ws_update_screen(void)
             dbl_row = row << 1;
             dbl_col = col << 1;
             uint16_t tile_index = GET_TILE_INDEX(IS_PIXEL_SET(pixels, ((dbl_col + 1) * LCD_HEIGHT) + (dbl_row + 0)), 
-                                                 IS_PIXEL_SET(pixels, ((dbl_col + 0) * LCD_HEIGHT) + (dbl_row + 0)), 
-                                                 IS_PIXEL_SET(pixels, ((dbl_col + 1) * LCD_HEIGHT) + (dbl_row + 1)), 
-                                                 IS_PIXEL_SET(pixels, ((dbl_col + 0) * LCD_HEIGHT) + (dbl_row + 1)));
+                                                    IS_PIXEL_SET(pixels, ((dbl_col + 0) * LCD_HEIGHT) + (dbl_row + 0)), 
+                                                    IS_PIXEL_SET(pixels, ((dbl_col + 1) * LCD_HEIGHT) + (dbl_row + 1)), 
+                                                    IS_PIXEL_SET(pixels, ((dbl_col + 0) * LCD_HEIGHT) + (dbl_row + 1)));
 
             ws_screen_put_tile(&wse_screen1, tile_lookup[tile_index], SCREEN_OFFSET_X + col, SCREEN_OFFSET_Y + row);
         }
-   }
-   memset(modified_tiles, 0x0, countof(modified_tiles));
+    }
+    g_screen_needs_update = 0;
+    memset(modified_tiles, 0x0, countof(modified_tiles));
 }
 
 void hal_ws_set_lcd_matrix(u8_t x, u8_t y, bool_t val)
@@ -386,6 +392,7 @@ void hal_ws_set_lcd_matrix(u8_t x, u8_t y, bool_t val)
     uint16_t target_bit = (x * LCD_HEIGHT) + y;
     SET_PIXEL(pixels, target_bit, val != 0 ? 0xF : 0x0);
     modified_tiles[(x * (LCD_HEIGHT > 1)) + y] |= 0xFF;
+    g_screen_needs_update = 0xFF;
     PRINT_LOG(LOG_PIXEL, log_pixel_write, x, y, val != 0 ? 1 : 0);
 }
 
