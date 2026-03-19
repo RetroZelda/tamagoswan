@@ -60,6 +60,7 @@ static hal_ws_icon ws_iram icons[ICON_NUM];
 static uint16_t last_keys = 0;
 static uint16_t curr_keys = 0;
 
+static uint8_t g_hw_line_cache = 0;
 static uint16_t g_loop_ticks = 0;
 volatile uint16_t g_vblank_ticks = 0;
 static uint8_t ws_iram g_screen_needs_update = 0;
@@ -262,9 +263,10 @@ void hal_ws_loop(void)
             }
             g_hal->handler();
             vblank_ticks_last = g_vblank_ticks;
-            ++g_loop_ticks;
         }
+        g_hw_line_cache = inportb(WS_DISPLAY_LINE_PORT);
         tamalib_step();
+        g_loop_ticks += inportb(WS_DISPLAY_LINE_PORT) - g_hw_line_cache;
     }
 }
 
@@ -379,7 +381,7 @@ void hal_ws_sleep_until(timestamp_t ts)
 
 timestamp_t hal_ws_get_timestamp(void)
 {
-    return (timestamp_t)g_loop_ticks;
+    return (timestamp_t)(inportb(WS_DISPLAY_LINE_PORT) - g_hw_line_cache);
 }
 
 void hal_ws_update_screen(void)
