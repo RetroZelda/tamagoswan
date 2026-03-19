@@ -78,10 +78,11 @@ static ts_hal_state g_hal_state =
 #ifdef ENABLE_LOGS
 #define SPRINTF_BUFFER_SIZE 128
 char ws_iram sprintf_dst_buffer[SPRINTF_BUFFER_SIZE];
-static uint8_t enable_logs = false;
+static uint8_t enable_logs = true;
 
 // strings for logging the level 
 DEFINE_STRING(log_level_memory,   " MEM");
+DEFINE_STRING(log_level_sound,    " SFX");
 DEFINE_STRING(log_level_pixel,    "PIXL");
 DEFINE_STRING(log_level_error,    " ERR");
 DEFINE_STRING(log_level_info,     "INFO");
@@ -98,6 +99,8 @@ DEFINE_STRING(log_game_load_failed, "load failed\n");
 DEFINE_STRING(log_pixel_write, "Pixel (%02d, %02d) %d\n");
 DEFINE_STRING(log_icon_write, "Icon %02d %s\n");
 DEFINE_STRING(log_halted, "Halted for %d\n");
+DEFINE_STRING(log_sound_frequency, "Frequency %X\n");
+DEFINE_STRING(log_sound_play, "Play: %s\n");
 DEFINE_STRING(log_generic_on, "on");
 DEFINE_STRING(log_generic_off, "off");
 #endif
@@ -292,6 +295,7 @@ bool_t hal_ws_is_log_enabled(log_level_t level)
 	case LOG_INT:   return false;
 	case LOG_OP:    return false;
 	case LOG_PIXEL: return false;
+	case LOG_SOUND: return true;
     }
 #endif // ENABLE_LOGS
     return false;
@@ -328,6 +332,9 @@ void hal_ws_log(log_level_t level, const char __wf_rom* buff, ...)
             break;
         case LOG_PIXEL:
             bytes_written = mini_snprintf(sprintf_dst_buffer, SPRINTF_BUFFER_SIZE, log_format, log_level_pixel);
+            break;
+        case LOG_SOUND:
+            bytes_written = mini_snprintf(sprintf_dst_buffer, SPRINTF_BUFFER_SIZE, log_format, log_level_sound);
             break;
     }
     
@@ -419,7 +426,7 @@ void hal_ws_set_lcd_matrix(u8_t x, u8_t y, bool_t val)
     SET_PIXEL(pixels, target_bit, val != 0 ? 0xF : 0x0);
     modified_tiles[(x * (LCD_HEIGHT > 1)) + y] |= 0xFF;
     ++g_screen_needs_update;
-    PRINT_LOG(LOG_PIXEL, log_pixel_write, x, y, val != 0 ? 1 : 0);
+    // PRINT_LOG(LOG_PIXEL, log_pixel_write, x, y, val != 0 ? 1 : 0);
 }
 
 void hal_ws_set_lcd_icon(u8_t icon, bool_t val)
@@ -439,12 +446,12 @@ void hal_ws_set_lcd_icon(u8_t icon, bool_t val)
 
 void hal_ws_set_frequency(u32_t freq)
 {
-
+    PRINT_LOG(LOG_SOUND, log_sound_frequency, freq);
 }
 
 void hal_ws_play_frequency(bool_t en)
 {
-
+    PRINT_LOG(LOG_SOUND, log_sound_play, en != 0 ? log_generic_on : log_generic_off);
 }
 
 int hal_ws_handler(void)
