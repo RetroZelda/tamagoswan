@@ -52,21 +52,10 @@ static hal_t ws_hal =
     .handler            = hal_ws_handler,
 };
 
-#define SPRITE_ROWS_PER_ICON 3
-#define SPRITE_COLS_PER_ICON 3
-
-typedef struct 
-{
-    ws_sprite_t ws_iram* sprites[SPRITE_ROWS_PER_ICON][SPRITE_COLS_PER_ICON];
-    uint8_t x;
-    uint8_t y;
-    uint8_t visible;
-} hal_ws_icon;
-
 
 #define BITS_TO_BYTES(bits)   (((bits) + 7) / 8)
 static uint8_t ws_iram pixels[BITS_TO_BYTES(LCD_WIDTH*LCD_HEIGHT)]; // TODO: Not holding these as bits could be a major speedup in rendering... however rendering isnt a problem anymore so whatevs
-static hal_ws_icon ws_iram* icons[ICON_NUM];
+static hal_ws_icon ws_iram icons[ICON_NUM];
 
 static uint16_t last_keys = 0;
 static uint16_t curr_keys = 0;
@@ -76,13 +65,19 @@ volatile uint16_t g_vblank_ticks = 0;
 static uint8_t ws_iram g_screen_needs_update = 0;
 static uint16_t ws_iram g_save_frequency_counter = 0;
 
+static ts_hal_state g_hal_state =
+{
+    .pixels = pixels,
+    .icons = icons
+};
+
 #define SCREEN_OFFSET_X 6
 #define SCREEN_OFFSET_Y 5
 
 #ifdef ENABLE_LOGS
 #define SPRINTF_BUFFER_SIZE 128
 char ws_iram sprintf_dst_buffer[SPRINTF_BUFFER_SIZE];
-static uint8_t enable_logs = true;
+static uint8_t enable_logs = false;
 
 // strings for logging the level 
 DEFINE_STRING(log_level_memory,   " MEM");
@@ -192,9 +187,9 @@ void hal_ws_initize()
     counter = 0;
     for(icon_index = 0; icon_index < ICON_NUM; ++icon_index)
     {
-        icons[icon_index]->x = ICON_POSITION_X_OFFSET + ((icon_index % 4) * SPRITE_COLS_PER_ICON * ICON_POSITION_X_SPREAD);
-        icons[icon_index]->y = icon_index < 4 ? ICON_POSITION_Y_ON_TOP : ICON_POSITION_Y_ON_BOTTOM;
-        icons[icon_index]->visible = 0;
+        icons[icon_index].x = ICON_POSITION_X_OFFSET + ((icon_index % 4) * SPRITE_COLS_PER_ICON * ICON_POSITION_X_SPREAD);
+        icons[icon_index].y = icon_index < 4 ? ICON_POSITION_Y_ON_TOP : ICON_POSITION_Y_ON_BOTTOM;
+        icons[icon_index].visible = 0;
         for(sprite_x = 0; sprite_x < SPRITE_COLS_PER_ICON; ++sprite_x)
         {
             for(sprite_y = 0; sprite_y < SPRITE_ROWS_PER_ICON; ++sprite_y)
@@ -204,12 +199,12 @@ void hal_ws_initize()
                       (icon_index * SPRITE_COLS_PER_ICON) +
                       sprite_x;
 
-                sprite->x = icons[icon_index]->x + (sprite_x * 8);
-                sprite->y = icons[icon_index]->visible != 0 ? icons[icon_index]->y + (sprite_y * 8) : ICON_POSITION_Y_OFF;
+                sprite->x = icons[icon_index].x + (sprite_x * 8);
+                sprite->y = icons[icon_index].visible != 0 ? icons[icon_index].y + (sprite_y * 8) : ICON_POSITION_Y_OFF;
                 sprite->attr = ( WS_SPRITE_ATTR_TILE(tile_index) & WS_SPRITE_ATTR_TILE_MASK) | 
                                 (WS_SPRITE_ATTR_PALETTE(0x7) & WS_SPRITE_ATTR_PALETTE_MASK);
 
-                icons[icon_index]->sprites[sprite_x][sprite_y] = sprite;
+                icons[icon_index].sprites[sprite_x][sprite_y] = sprite;
             }
 
         }
@@ -222,7 +217,7 @@ void hal_ws_initize()
 	ws_int_enable(WS_INT_ENABLE_VBLANK | WS_INT_ENABLE_KEY_SCAN);
 	ia16_enable_irq();
 
-    if(ts_load(cpu_get_state()) == true)
+    if(ts_load(cpu_get_state(), &g_hal_state) == true)
     {
         PRINT_LOG(LOG_INFO, log_game_load_success);
     }
@@ -231,6 +226,9 @@ void hal_ws_initize()
         PRINT_LOG(LOG_INFO, log_game_load_failed);
     }
 
+    // ensure we attempt a full draw once
+    g_screen_needs_update = 1; 
+    memset(modified_tiles, 0xFFFF, (LCD_WIDTH * LCD_HEIGHT) >> 2);
     vblank_wait();
 
     #ifdef USE_UART
@@ -252,7 +250,7 @@ void hal_ws_loop(void)
             }
             else if(++g_save_frequency_counter > 500) // triggers a save every 1000 vblanks if we arent updating the screen
             {
-                if(ts_save(cpu_get_state()) == true)
+                if(ts_save(cpu_get_state(), &g_hal_state) == true)
                 {
                     PRINT_LOG(LOG_INFO, log_game_save_success);
                 }
@@ -424,13 +422,13 @@ void hal_ws_set_lcd_matrix(u8_t x, u8_t y, bool_t val)
 
 void hal_ws_set_lcd_icon(u8_t icon, bool_t val)
 {
-    icons[icon]->visible = val;
+    icons[icon].visible = val;
     for(uint8_t sprite_x = 0; sprite_x < SPRITE_COLS_PER_ICON; ++sprite_x)
     {
         for(uint8_t sprite_y = 0; sprite_y < SPRITE_ROWS_PER_ICON; ++sprite_y)
         {
-            icons[icon]->sprites[sprite_x][sprite_y]->x = icons[icon]->x + (sprite_x * 8);
-            icons[icon]->sprites[sprite_x][sprite_y]->y = val != 0 ? icons[icon]->y + (sprite_y * 8) : ICON_POSITION_Y_OFF;
+            icons[icon].sprites[sprite_x][sprite_y]->x = icons[icon].x + (sprite_x * 8);
+            icons[icon].sprites[sprite_x][sprite_y]->y = val != 0 ? icons[icon].y + (sprite_y * 8) : ICON_POSITION_Y_OFF;
         }
     }
     
