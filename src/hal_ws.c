@@ -13,6 +13,7 @@
 #include <stdio.h>
 #include <time.h>
 
+#include "save_data.h"
 #include "rom/rom.h"
 #include "utility.h"
 
@@ -72,6 +73,8 @@ static uint16_t curr_keys = 0;
 
 static uint16_t g_loop_ticks = 0;
 volatile uint16_t g_vblank_ticks = 0;
+static uint8_t ws_iram g_screen_needs_update = 0;
+static uint16_t ws_iram g_save_frequency_counter = 0;
 
 #define SCREEN_OFFSET_X 6
 #define SCREEN_OFFSET_Y 5
@@ -79,7 +82,7 @@ volatile uint16_t g_vblank_ticks = 0;
 #ifdef ENABLE_LOGS
 #define SPRINTF_BUFFER_SIZE 128
 char ws_iram sprintf_dst_buffer[SPRINTF_BUFFER_SIZE];
-static uint8_t enable_logs = false;
+static uint8_t enable_logs = true;
 
 // strings for logging the level 
 DEFINE_STRING(log_level_memory,   " MEM");
@@ -92,6 +95,10 @@ DEFINE_STRING(log_level_op,       "  OP");
 DEFINE_STRING(log_format,         "%s: ");
 
 // strings for our HAL logs
+DEFINE_STRING(log_game_save_success, "save success\n");
+DEFINE_STRING(log_game_save_failed, "save failed\n");
+DEFINE_STRING(log_game_load_success, "load success\n");
+DEFINE_STRING(log_game_load_failed, "load failed\n");
 DEFINE_STRING(log_pixel_write, "Pixel (%02d, %02d) %d\n");
 DEFINE_STRING(log_icon_write, "Icon %02d %s\n");
 DEFINE_STRING(log_halted, "Halted for %d\n");
@@ -215,6 +222,15 @@ void hal_ws_initize()
 	ws_int_enable(WS_INT_ENABLE_VBLANK | WS_INT_ENABLE_KEY_SCAN);
 	ia16_enable_irq();
 
+    if(ts_load(cpu_get_state()) == true)
+    {
+        PRINT_LOG(LOG_INFO, log_game_load_success);
+    }
+    else
+    {
+        PRINT_LOG(LOG_INFO, log_game_load_failed);
+    }
+
     vblank_wait();
 
     #ifdef USE_UART
@@ -229,10 +245,26 @@ void hal_ws_loop(void)
 	{
         if(vblank_ticks_last != g_vblank_ticks)
         {
-            g_hal->update_screen();
+            if(g_screen_needs_update > 0)
+            {
+                g_hal->update_screen();
+                g_screen_needs_update = 0;
+            }
+            else if(++g_save_frequency_counter > 500) // triggers a save every 1000 vblanks if we arent updating the screen
+            {
+                if(ts_save(cpu_get_state()) == true)
+                {
+                    PRINT_LOG(LOG_INFO, log_game_save_success);
+                }
+                else
+                {
+                    PRINT_LOG(LOG_INFO, log_game_save_failed);
+                }
+                g_save_frequency_counter = 0;
+            }
             g_hal->handler();
             vblank_ticks_last = g_vblank_ticks;
-        ++g_loop_ticks;
+            ++g_loop_ticks;
         }
         tamalib_step();
     }
@@ -253,13 +285,13 @@ bool_t hal_ws_is_log_enabled(log_level_t level)
 
     switch(level)
     {
-	case LOG_ERROR: return false;
-	case LOG_INFO:  return false;
+	case LOG_ERROR: return true;
+	case LOG_INFO:  return true;
     case LOG_MEMORY:return false;
 	case LOG_CPU:   return false;
 	case LOG_INT:   return false;
 	case LOG_OP:    return false;
-	case LOG_PIXEL: return true;
+	case LOG_PIXEL: return false;
     }
 #endif // ENABLE_LOGS
     return false;
@@ -352,13 +384,8 @@ timestamp_t hal_ws_get_timestamp(void)
     return (timestamp_t)g_loop_ticks;
 }
 
-uint8_t ws_iram g_screen_needs_update = 0;
 void hal_ws_update_screen(void)
 {      
-    if(g_screen_needs_update == 0)
-    {
-        return;
-    }
     uint8_t row = 0;
     uint8_t col = 0;
     uint8_t dbl_row = 0;
@@ -383,7 +410,6 @@ void hal_ws_update_screen(void)
             ws_screen_put_tile(&wse_screen1, tile_lookup[tile_index], SCREEN_OFFSET_X + col, SCREEN_OFFSET_Y + row);
         }
     }
-    g_screen_needs_update = 0;
     memset(modified_tiles, 0x0, countof(modified_tiles));
 }
 
@@ -392,7 +418,7 @@ void hal_ws_set_lcd_matrix(u8_t x, u8_t y, bool_t val)
     uint16_t target_bit = (x * LCD_HEIGHT) + y;
     SET_PIXEL(pixels, target_bit, val != 0 ? 0xF : 0x0);
     modified_tiles[(x * (LCD_HEIGHT > 1)) + y] |= 0xFF;
-    g_screen_needs_update = 0xFF;
+    ++g_screen_needs_update;
     PRINT_LOG(LOG_PIXEL, log_pixel_write, x, y, val != 0 ? 1 : 0);
 }
 
@@ -408,7 +434,7 @@ void hal_ws_set_lcd_icon(u8_t icon, bool_t val)
         }
     }
     
-    PRINT_LOG(LOG_INFO, log_icon_write, icon, val != 0 ? log_generic_on : log_generic_off);
+    // PRINT_LOG(LOG_INFO, log_icon_write, icon, val != 0 ? log_generic_on : log_generic_off);
 }
 
 void hal_ws_set_frequency(u32_t freq)

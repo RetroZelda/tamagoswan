@@ -90,7 +90,13 @@ void main(void)
 
 #ifdef ENABLE_LOGS
     setup_console();
+#endif // ENABLE_LOGS
 
+    hal_ws_initize();
+
+    // NOTE: enabling hte screens last due to some ports used during init (e.g. WS_SPR_COUNT_PORT, WS_CART_BANK_FLASH_PORT)
+    //       affecting some of the display port values.  This might be a bug in Mesen tho, however I dont have a flashcart to test on hardware
+#ifdef ENABLE_LOGS
     // enable screen 1 for the tamagochi and screen 2 for logging
 	ws_display_set_control( WS_DISPLAY_CTRL_SCR1_ENABLE | 
                             WS_DISPLAY_CTRL_SCR2_ENABLE | 
@@ -101,7 +107,5 @@ void main(void)
                             WS_DISPLAY_CTRL_SPR_ENABLE);
 #endif // ENABLE_LOGS
 
-
-    hal_ws_initize();
     hal_ws_loop();
 }

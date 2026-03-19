@@ -3,7 +3,7 @@ publisher_id = 0x00
 game_id = 0
 game_version = 0
 
-save_type = "NONE"
+save_type = 0x01
 color = true
 rtc = false
 vertical = false
