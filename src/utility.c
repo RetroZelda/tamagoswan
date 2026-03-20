@@ -206,8 +206,41 @@ uint16_t ts_utility_vsnprintf(char *buffer, uint16_t max_len, const char __wf_ro
     return would_write;
 }
 
-
-void ts_utility_screen_print(ws_screen_t ws_iram* screen, uint16_t start_tile_x, uint16_t start_tile_y, const char* text)
+#include <wsx/console.h>
+extern wsx_console_config_t console_config; // should find the condfig in main.c
+void ts_utility_screen_print(ws_screen_t ws_iram* screen, uint16_t start_tile_x, uint16_t start_tile_y, const char __wf_rom* text)
 {
+    uint16_t tile;
+    uint16_t tile_index;
+    uint16_t pos_x = start_tile_x;
+    const char __wf_rom* p = text;
+    while(*p)
+    {
+        switch(*p)
+        {
+            case '\n':
+                pos_x = start_tile_x;
+                ++start_tile_y;
+                ++p;
+                continue;
+            case '\t':
+                ++pos_x;
+            default:
+            {
+                if(*p < console_config.char_start || *p > console_config.char_start + console_config.char_count)
+                {
+                    ++pos_x;
+                    ++p;
+                    continue;
+                }
+            }
+        }           
+        
+        tile_index = console_config.tile_offset + (*p - console_config.char_start);
+        tile = (WS_SCREEN_ATTR_TILE(tile_index) & WS_SCREEN_ATTR_TILE_MASK)
+             | (WS_SCREEN_ATTR_PALETTE(console_config.palette) & WS_SCREEN_ATTR_PALETTE_MASK);
 
+        ws_screen_put_tile(screen, tile, pos_x++, start_tile_y);
+        ++p;
+    }
 }

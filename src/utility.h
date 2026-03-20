@@ -2,6 +2,7 @@
 #define __UTILITY_H__
 
 #include <wonderful.h>
+#include <ws.h>
 #include <stddef.h>
 #include <stdarg.h>
 
@@ -19,6 +20,6 @@ uint16_t ts_utility_snprintf(char* buffer, uint16_t max_len, const char __wf_rom
 uint16_t ts_utility_vsnprintf(char *buffer, uint16_t max_len, const char __wf_rom *format, va_list args);
 
 // will use the font from <wsx/console.h> to print text to the screen at a given position
-void ts_utility_screen_print(ws_screen_t ws_iram* screen, uint16_t start_tile_x, uint16_t start_tile_y, const char* text);
+void ts_utility_screen_print(ws_screen_t ws_iram* screen, uint16_t start_tile_x, uint16_t start_tile_y, const char __wf_rom* text);
 
 #endif // __UTILITY_H__

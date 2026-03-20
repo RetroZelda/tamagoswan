@@ -8,34 +8,41 @@
 #include "pixel_tiles.h"
 #include "hal_ws.h"
 #include "memory.h"
+#include "menu.h"
 
 #include "icons/icons.h"
+#include "images/menu.h"
 
 #define NUM_FONT_TILES 96
 #define NUM_ICON_TILES gfx_color_icons_tiles_size / sizeof(ws_display_tile_t)
 #define TOTAL_TILES (gfx_pixel_tiles_size + NUM_ICON_TILES + NUM_FONT_TILES)
-WSE_RESERVE_TILES(256, 0);
+WSE_RESERVE_TILES(512, 0);
 
 // defined as a part of libwsx
 // https://github.com/WonderfulToolchain/target-wswan-syslibs/blob/main/libwsx/assets/wsx_console_font_default.lua
 extern const uint8_t __wf_rom wsx_console_font_default[];
+ws_display_tile_t ws_iram* menu_header_tiles;
+ws_display_tile_t ws_iram* menu_footer_tiles;
+
+
+wsx_console_config_t console_config = 
+{
+    .tile_offset = TOTAL_TILES - NUM_FONT_TILES, // WSE_RESERVE_TILES - char_count
+    .char_start = 32,
+    .char_count = NUM_FONT_TILES,
+    .screen = WSX_CONSOLE_SCREEN2,
+    .palette = 0xC // On a "mono" model, only palettes 4-7 and 12-15 are translucent.
+};
 
 static void setup_console()
 {
-    wsx_console_config_t config;
-    config.tile_offset = TOTAL_TILES - NUM_FONT_TILES; // WSE_RESERVE_TILES - char_count
-    config.char_start = 32;
-    config.char_count = NUM_FONT_TILES;
-    config.screen = WSX_CONSOLE_SCREEN2;
-    config.palette = 0xC; // On a "mono" model, only palettes 4-7 and 12-15 are translucent.
-
     outportw(WS_DISPLAY_CTRL_PORT, 0);
-    wsx_zx0_decompress(WS_TILE_MEM(config.tile_offset), wsx_console_font_default);
-    wsx_console_init(&config);
+    wsx_zx0_decompress(WS_TILE_MEM(console_config.tile_offset), wsx_console_font_default);
+    wsx_console_init(&console_config);
 
     // hackily replace the start char for better clears
-    uint16_t tile = (WS_SCREEN_ATTR_TILE(config.tile_offset) & WS_SCREEN_ATTR_TILE_MASK)
-                    | (WS_SCREEN_ATTR_PALETTE(config.palette) & WS_SCREEN_ATTR_PALETTE_MASK)
+    uint16_t tile = (WS_SCREEN_ATTR_TILE(console_config.tile_offset) & WS_SCREEN_ATTR_TILE_MASK)
+                    | (WS_SCREEN_ATTR_PALETTE(console_config.palette) & WS_SCREEN_ATTR_PALETTE_MASK)
                     | (WS_SCREEN_ATTR_BANK(0) & WS_SCREEN_ATTR_BANK_MASK) // bank
                     | (0)  // WS_SCREEN_ATTR_FLIP_H
                     | (0); // WS_SCREEN_ATTR_FLIP_V
@@ -84,10 +91,21 @@ void main(void)
 
     memcpy(WS_TILE_MEM(0), gfx_pixel_tiles, gfx_pixel_tiles_size * sizeof(ws_display_tile_t));
     memcpy(WS_TILE_MEM(gfx_pixel_tiles_size), gfx_color_icons_tiles, gfx_color_icons_tiles_size);
+    
+    uint16_t menu_tiles_start = gfx_pixel_tiles_size + NUM_FONT_TILES + (gfx_color_icons_tiles_size / sizeof(ws_display_tile_t));
+    menu_header_tiles = WS_TILE_MEM(menu_tiles_start);
+    menu_tiles_start += (gfx_color_menu_header_tiles_size / sizeof(ws_display_tile_t));
+    menu_footer_tiles = WS_TILE_MEM(menu_tiles_start);
+    memcpy(menu_header_tiles, gfx_color_menu_header_tiles, gfx_color_menu_header_tiles_size);
+    memcpy(menu_footer_tiles, gfx_color_menu_footer_tiles, gfx_color_menu_footer_tiles_size);
 
     setup_console();
 
-    hal_ws_initize(false);
+    ts_menu_setup();
+    ts_menu_main();
+
+	ws_display_set_control(0);
+    hal_ws_initize(ts_get_menu_result() == MENU_RESULT_NEW);
 
     // NOTE: enabling hte screens last due to some ports used during init (e.g. WS_SPR_COUNT_PORT, WS_CART_BANK_FLASH_PORT)
     //       affecting some of the display port values.  This might be a bug in Mesen tho, however I dont have a flashcart to test on hardware
