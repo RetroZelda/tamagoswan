@@ -26,6 +26,7 @@ DEFINE_STRING_LOCAL(menu_item_empty,       " ");
 DEFINE_STRING_LOCAL(menu_credits_line_0,     "Special Thanks");
 DEFINE_STRING_LOCAL(menu_credits_line_1,     "TamaLib.............Jcrona");
 DEFINE_STRING_LOCAL(menu_credits_line_2,     "Wonderful...........Asie");
+DEFINE_STRING_LOCAL(menu_credits_line_3,     "Created by @RetroZelda");
 DEFINE_STRING_LOCAL(menu_credits_exit,       "Press any key to return");
 
 static ts_menu_result ws_iram selected_menu_item;
@@ -73,9 +74,8 @@ static void draw_menu()
     }
     ts_utility_screen_print(&wse_screen2, MENU_OPTION_START_X, MENU_OPTION_START_Y + 2, menu_item_credits);
     
-    ws_display_set_control( WS_DISPLAY_CTRL_SCR1_ENABLE | 
-                            WS_DISPLAY_CTRL_SCR2_ENABLE | 
-                            WS_DISPLAY_CTRL_SPR_ENABLE);
+
+    ts_utility_screen_print(&wse_screen2, 1, 16, menu_credits_line_3);
 }
 
 static void draw_selection()
@@ -138,6 +138,7 @@ void ts_menu_setup()
     }
 
     // the footer is 28x3 and starts at row 15
+    /*
     tile_index = menu_footer_tiles - WS_TILE_MEM(0);
     tile_row = 0;
     for(; tile_row < 3; ++tile_row)
@@ -150,9 +151,13 @@ void ts_menu_setup()
             ws_screen_put_tile(&wse_screen1, tile, tile_col, 15 + tile_row);
         }
     }
+    */
 
-    
     ws_display_scroll_screen2_to(0, 0);
+    ws_display_set_control( WS_DISPLAY_CTRL_SCR1_ENABLE | 
+                            WS_DISPLAY_CTRL_SCR2_ENABLE | 
+                            WS_DISPLAY_CTRL_SPR_ENABLE);
+    
     menu_state = MENU;
     draw_menu();
 }
@@ -225,9 +230,9 @@ void ts_menu_main()
             } break;
             case CREDITS:
             {
-                if(ticks_in_credits < 20000) // arbituary waiting
+                if(ticks_in_credits < 30000) // arbituary waiting
                 {
-                    if(++ticks_in_credits >= 20000)
+                    if(++ticks_in_credits >= 30000)
                     {
                         ts_utility_screen_print(&wse_screen2, 3, 14, menu_credits_exit);
                     }
