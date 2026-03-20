@@ -6,6 +6,7 @@
 
 #include <wse/memory.h>
 #include <wsx/console.h>
+#include <ws/sound.h>
 #include <ws/util.h>
 
 #include <stdcountof.h>
@@ -13,6 +14,7 @@
 #include <stdio.h>
 #include <time.h>
 
+#include "waveforms.h"
 #include "save_data.h"
 #include "rom/rom.h"
 #include "utility.h"
@@ -65,11 +67,15 @@ static uint16_t g_loop_ticks = 0;
 volatile uint16_t g_vblank_ticks = 0;
 static uint8_t ws_iram g_screen_needs_update = 0;
 static uint16_t ws_iram g_save_frequency_counter = 0;
+static bool ws_iram g_play_audio = false;
+static uint32_t ws_iram g_audio_frequency = 0x1; // NOTE: Making this 0 will break things
 
 static ts_hal_state g_hal_state =
 {
     .pixels = pixels,
-    .icons = icons
+    .icons = icons,
+    .play_audio = &g_play_audio,
+    .audio_frequency = &g_audio_frequency 
 };
 
 #define SCREEN_OFFSET_X 6
@@ -78,7 +84,7 @@ static ts_hal_state g_hal_state =
 #ifdef ENABLE_LOGS
 #define SPRINTF_BUFFER_SIZE 128
 char ws_iram sprintf_dst_buffer[SPRINTF_BUFFER_SIZE];
-static uint8_t enable_logs = true;
+static uint8_t enable_logs = false;
 
 // strings for logging the level 
 DEFINE_STRING(log_level_memory,   " MEM");
@@ -99,7 +105,7 @@ DEFINE_STRING(log_game_load_failed, "load failed\n");
 DEFINE_STRING(log_pixel_write, "Pixel (%02d, %02d) %d\n");
 DEFINE_STRING(log_icon_write, "Icon %02d %s\n");
 DEFINE_STRING(log_halted, "Halted for %d\n");
-DEFINE_STRING(log_sound_frequency, "Frequency %X\n");
+DEFINE_STRING(log_sound_frequency, "Frequency 0x%Xhz\n");
 DEFINE_STRING(log_sound_play, "Play: %s\n");
 DEFINE_STRING(log_generic_on, "on");
 DEFINE_STRING(log_generic_off, "off");
@@ -121,6 +127,14 @@ DEFINE_STRING(log_generic_off, "off");
 #define SET_PIXEL(arr, p, v)      ((arr)[(p)>>3] =   ((arr)[(p)>>3] & ~(1 << ((p)&7))) | ((!!(v)) << ((p)&7)))
 #define GET_TILE_INDEX(a, b,  c, d) ((a) ? 1 : 0) | ((b) ? 2 : 0) | ((c) ? 4 : 0) | ((d) ? 8 : 0)
 #define GET_SCREEN_TILE_FROM_PIXEL(x, y) ((x >> 1) + (x & 1) * LCD_WIDTH) + ((y >> 1) + (y & 1))
+
+// helpers for sound things.  stolen from my example
+//https://github.com/RetroZelda/ws-sound-exmaple
+#define WS_SOUND_WAVETABLE_CH1 0x00
+#define WS_SOUND_WAVETABLE_CH2 0x01
+#define WS_SOUND_WAVETABLE_CH3 0x02
+#define WS_SOUND_WAVETABLE_CH4 0x03
+#define WS_SOUND_VOLUME(left, right) (((left & 0xF) << 4) | (right & 0xF))
 
 // buffers to optimize screen draw
 static uint8_t ws_iram modified_tiles[(LCD_WIDTH * LCD_HEIGHT) >> 2];
@@ -159,6 +173,12 @@ static void vblank_int_handler(void)
     ++g_vblank_ticks;
     ws_int_ack(WS_INT_ACK_VBLANK);
 }
+
+static void load_waveform(const uint8_t __wf_rom* packed_data, uint8_t channel)
+{
+    memcpy(wse_wavetable1.wave[channel].data, packed_data, 16);
+}
+
 
 void hal_ws_initize()
 {
@@ -214,6 +234,15 @@ void hal_ws_initize()
         }
     }
 
+    // setup audio on channel 1
+    g_play_audio = false;
+    g_audio_frequency = 0x1; 
+    ws_sound_set_wavetable_address(&wse_wavetable1);
+    outportb(WS_SOUND_OUT_CTRL_PORT, (WS_SOUND_OUT_CTRL_SPEAKER_VOLUME_200 << WS_SOUND_OUT_CTRL_SPEAKER_VOLUME_SHIFT) | 
+                                     WS_SOUND_OUT_CTRL_SPEAKER_ENABLE); 
+    load_waveform(square_wave, WS_SOUND_WAVETABLE_CH1);
+    outportb(WS_SOUND_VOL_CH1_PORT, WS_SOUND_VOLUME(0x7, 0x7)); // TODO: Should maybe make this adjustable
+
     // register our interrupts
 	ws_int_set_handler(WS_INT_VBLANK, vblank_int_handler);
     ws_int_set_default_handler_key();
@@ -229,6 +258,10 @@ void hal_ws_initize()
     {
         PRINT_LOG(LOG_INFO, log_game_load_failed);
     }
+
+    // set the state of the audio
+    outportb(WS_SOUND_CH_CTRL_PORT, g_play_audio != 0 ? WS_SOUND_CH_CTRL_CH1_ENABLE : 0);
+    outportw(WS_SOUND_FREQ_CH1_PORT, WS_SOUND_UPDATE_HZ_TO_FREQ(g_audio_frequency));
 
     // ensure we attempt a full draw once
     g_screen_needs_update = 1; 
@@ -289,7 +322,7 @@ bool_t hal_ws_is_log_enabled(log_level_t level)
     switch(level)
     {
 	case LOG_ERROR: return true;
-	case LOG_INFO:  return true;
+	case LOG_INFO:  return false;
     case LOG_MEMORY:return false;
 	case LOG_CPU:   return false;
 	case LOG_INT:   return false;
@@ -446,12 +479,22 @@ void hal_ws_set_lcd_icon(u8_t icon, bool_t val)
 
 void hal_ws_set_frequency(u32_t freq)
 {
-    PRINT_LOG(LOG_SOUND, log_sound_frequency, freq);
+    if(g_audio_frequency != freq)
+    {
+        g_audio_frequency = freq == 0 ? 0x1 : freq; // NOTE: cant be 0
+        outportw(WS_SOUND_FREQ_CH1_PORT, WS_SOUND_UPDATE_HZ_TO_FREQ(g_audio_frequency));
+        PRINT_LOG(LOG_SOUND, log_sound_frequency, freq);
+    }
 }
 
 void hal_ws_play_frequency(bool_t en)
 {
-    PRINT_LOG(LOG_SOUND, log_sound_play, en != 0 ? log_generic_on : log_generic_off);
+    if(g_play_audio != en)
+    {
+        g_play_audio = en;
+        outportb(WS_SOUND_CH_CTRL_PORT, g_play_audio != 0 ? WS_SOUND_CH_CTRL_CH1_ENABLE : 0);
+        PRINT_LOG(LOG_SOUND, log_sound_play, en != 0 ? log_generic_on : log_generic_off);
+    }
 }
 
 int hal_ws_handler(void)

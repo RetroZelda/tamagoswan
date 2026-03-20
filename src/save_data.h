@@ -8,6 +8,8 @@ typedef struct
 {
     uint8_t ws_iram* pixels;
     hal_ws_icon ws_iram* icons;
+    bool ws_iram* play_audio;
+    uint32_t ws_iram* audio_frequency;
 } ts_hal_state;
 
 /*
