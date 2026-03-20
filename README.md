@@ -6,6 +6,8 @@ Expect terrible performance of Tamalib, but feel free to contribute to either th
 
 This was tested with the P1 rom, however any tamalib compatible rom should work.  The roms need their bits flipped manually before including in the build.
 
+Requires WonderSwan Color or Crystal
+
 ## Controlls
 - X4 - Left Button
 - X3 - Middle Button
