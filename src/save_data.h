@@ -17,6 +17,7 @@ typedef struct
  * as well as the state of the hal
  */
 
+bool ts_has_save_data();
 bool ts_save(const state_t* cpu_state, const ts_hal_state* hal_state);
 bool ts_load(state_t* cpu_state, ts_hal_state* hal_state);
 

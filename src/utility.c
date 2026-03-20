@@ -4,24 +4,25 @@
 #include <stdarg.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include <ws.h>
 
 DEFINE_STRING_LOCAL(digits_upper, "0123456789ABCDEF");
 DEFINE_STRING_LOCAL(digits_lower, "0123456789abcdef");
 DEFINE_STRING_LOCAL(null_text, "(null)");
 
-uint16_t mini_snprintf(char* buffer, uint16_t max_len, const char __wf_rom *format, ...)
+uint16_t ts_utility_snprintf(char* buffer, uint16_t max_len, const char __wf_rom *format, ...)
 {
     va_list args;
     va_start(args, format);
 
-    uint16_t written = mini_vsnprintf(buffer, max_len, format, args);
+    uint16_t written = ts_utility_vsnprintf(buffer, max_len, format, args);
     
     va_end(args);
 
     return written;
 }
 
-uint16_t mini_vsnprintf(char *buffer, uint16_t max_len, const char __wf_rom *format, va_list args)
+uint16_t ts_utility_vsnprintf(char *buffer, uint16_t max_len, const char __wf_rom *format, va_list args)
 {
     if (max_len == 0 || buffer == NULL) 
     {
@@ -203,4 +204,10 @@ uint16_t mini_vsnprintf(char *buffer, uint16_t max_len, const char __wf_rom *for
 
     // Return value follows snprintf convention
     return would_write;
+}
+
+
+void ts_utility_screen_print(ws_screen_t ws_iram* screen, uint16_t start_tile_x, uint16_t start_tile_y, const char* text)
+{
+
 }

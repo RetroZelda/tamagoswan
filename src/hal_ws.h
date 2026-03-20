@@ -19,7 +19,7 @@ typedef struct
     uint8_t visible;
 } hal_ws_icon;
 
-void hal_ws_initize();
+void hal_ws_initize(bool new_game);
 void hal_ws_loop();
 
 

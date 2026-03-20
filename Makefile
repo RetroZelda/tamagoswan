@@ -22,7 +22,11 @@ CBINDIRS	:= cbin
 # Defines passed to all files
 # ---------------------------
 
-DEFINES		:= -DENABLE_LOGS
+# Disabling logs will be a great performance gain in tamalib
+# however disabling it breaks things to stop running properly
+# print_state() in cpu.c is the problem where not having 
+# that function caused things to not work right and idk why 
+DEFINES		:= -DENABLE_LOGS 
 
 # Libraries
 # ---------

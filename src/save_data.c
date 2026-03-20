@@ -79,6 +79,19 @@ static inline uint8_t get_next_buffer_index(uint8_t in_index)
     return in_index + 1;
 }
 
+bool ts_has_save_data()
+{
+	bool has_save_data = false;
+
+    outportw(WS_CART_BANK_FLASH_PORT, WS_CART_BANK_FLASH_ENABLE);
+	ts_save_data __wf_sram* save_data = (ts_save_data __wf_sram*)WS_SRAM_MEM;
+
+	has_save_data = save_data->verification_header.header_value == HEADER_VALUE;
+
+    outportw(WS_CART_BANK_FLASH_PORT, WS_CART_BANK_FLASH_DISABLE);
+	return has_save_data;
+}
+
 bool ts_save(const state_t* cpu_state, const ts_hal_state* hal_state)
 {
     outportw(WS_CART_BANK_FLASH_PORT, WS_CART_BANK_FLASH_ENABLE);

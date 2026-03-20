@@ -180,7 +180,7 @@ static void load_waveform(const uint8_t __wf_rom* packed_data, uint8_t channel)
 }
 
 
-void hal_ws_initize()
+void hal_ws_initize(bool new_game)
 {
     uint8_t sprite_x, sprite_y;
     uint8_t counter;
@@ -250,13 +250,16 @@ void hal_ws_initize()
 	ws_int_enable(WS_INT_ENABLE_VBLANK | WS_INT_ENABLE_KEY_SCAN);
 	ia16_enable_irq();
 
-    if(ts_load(cpu_get_state(), &g_hal_state) == true)
+    if(new_game == false) // if a new game is requested, we can just skip attempting to load
     {
-        PRINT_LOG(LOG_INFO, log_game_load_success);
-    }
-    else
-    {
-        PRINT_LOG(LOG_INFO, log_game_load_failed);
+        if(ts_load(cpu_get_state(), &g_hal_state) == true)
+        {
+            PRINT_LOG(LOG_INFO, log_game_load_success);
+        }
+        else
+        {
+            PRINT_LOG(LOG_INFO, log_game_load_failed);
+        }
     }
 
     // set the state of the audio
@@ -346,28 +349,28 @@ void hal_ws_log(log_level_t level, const char __wf_rom* buff, ...)
     switch(level)
     {
         case LOG_ERROR:
-            bytes_written = mini_snprintf(sprintf_dst_buffer, SPRINTF_BUFFER_SIZE, log_format, log_level_error);
+            bytes_written = ts_utility_snprintf(sprintf_dst_buffer, SPRINTF_BUFFER_SIZE, log_format, log_level_error);
             break;
         case LOG_INFO:
-            bytes_written = mini_snprintf(sprintf_dst_buffer, SPRINTF_BUFFER_SIZE, log_format, log_level_info);
+            bytes_written = ts_utility_snprintf(sprintf_dst_buffer, SPRINTF_BUFFER_SIZE, log_format, log_level_info);
             break;
         case LOG_MEMORY:
-            bytes_written = mini_snprintf(sprintf_dst_buffer, SPRINTF_BUFFER_SIZE, log_format, log_level_memory);
+            bytes_written = ts_utility_snprintf(sprintf_dst_buffer, SPRINTF_BUFFER_SIZE, log_format, log_level_memory);
             break;
         case LOG_CPU:
-            bytes_written = mini_snprintf(sprintf_dst_buffer, SPRINTF_BUFFER_SIZE, log_format, log_level_cpu);
+            bytes_written = ts_utility_snprintf(sprintf_dst_buffer, SPRINTF_BUFFER_SIZE, log_format, log_level_cpu);
             break;
         case LOG_INT:
-            bytes_written = mini_snprintf(sprintf_dst_buffer, SPRINTF_BUFFER_SIZE, log_format, log_level_int);
+            bytes_written = ts_utility_snprintf(sprintf_dst_buffer, SPRINTF_BUFFER_SIZE, log_format, log_level_int);
             break;
         case LOG_OP:
-            bytes_written = mini_snprintf(sprintf_dst_buffer, SPRINTF_BUFFER_SIZE, log_format, log_level_op);
+            bytes_written = ts_utility_snprintf(sprintf_dst_buffer, SPRINTF_BUFFER_SIZE, log_format, log_level_op);
             break;
         case LOG_PIXEL:
-            bytes_written = mini_snprintf(sprintf_dst_buffer, SPRINTF_BUFFER_SIZE, log_format, log_level_pixel);
+            bytes_written = ts_utility_snprintf(sprintf_dst_buffer, SPRINTF_BUFFER_SIZE, log_format, log_level_pixel);
             break;
         case LOG_SOUND:
-            bytes_written = mini_snprintf(sprintf_dst_buffer, SPRINTF_BUFFER_SIZE, log_format, log_level_sound);
+            bytes_written = ts_utility_snprintf(sprintf_dst_buffer, SPRINTF_BUFFER_SIZE, log_format, log_level_sound);
             break;
     }
     
@@ -376,7 +379,7 @@ void hal_ws_log(log_level_t level, const char __wf_rom* buff, ...)
         va_list args;
         va_start(args, buff);
         // vsnprintf(sprintf_dst_buffer, SPRINTF_BUFFER_SIZE, buff, args);
-        mini_vsnprintf(sprintf_dst_buffer + bytes_written, 
+        ts_utility_vsnprintf(sprintf_dst_buffer + bytes_written, 
                        SPRINTF_BUFFER_SIZE - bytes_written, buff, args);
         va_end(args);
 

@@ -16,13 +16,11 @@
 #define TOTAL_TILES (gfx_pixel_tiles_size + NUM_ICON_TILES + NUM_FONT_TILES)
 WSE_RESERVE_TILES(256, 0);
 
-#ifdef ENABLE_LOGS
-
 // defined as a part of libwsx
 // https://github.com/WonderfulToolchain/target-wswan-syslibs/blob/main/libwsx/assets/wsx_console_font_default.lua
 extern const uint8_t __wf_rom wsx_console_font_default[];
 
-void setup_console()
+static void setup_console()
 {
     wsx_console_config_t config;
     config.tile_offset = TOTAL_TILES - NUM_FONT_TILES; // WSE_RESERVE_TILES - char_count
@@ -44,7 +42,6 @@ void setup_console()
 
     ws_screen_fill_tiles(&wse_screen2, tile, 0, 0, 32, 32);
 }
-#endif // ENABLE_LOGS
 
 void main(void)
 {   
@@ -88,11 +85,9 @@ void main(void)
     memcpy(WS_TILE_MEM(0), gfx_pixel_tiles, gfx_pixel_tiles_size * sizeof(ws_display_tile_t));
     memcpy(WS_TILE_MEM(gfx_pixel_tiles_size), gfx_color_icons_tiles, gfx_color_icons_tiles_size);
 
-#ifdef ENABLE_LOGS
     setup_console();
-#endif // ENABLE_LOGS
 
-    hal_ws_initize();
+    hal_ws_initize(false);
 
     // NOTE: enabling hte screens last due to some ports used during init (e.g. WS_SPR_COUNT_PORT, WS_CART_BANK_FLASH_PORT)
     //       affecting some of the display port values.  This might be a bug in Mesen tho, however I dont have a flashcart to test on hardware
