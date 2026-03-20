@@ -27,6 +27,7 @@ DEFINE_STRING_LOCAL(menu_credits_line_0,     "Special Thanks");
 DEFINE_STRING_LOCAL(menu_credits_line_1,     "TamaLib.............Jcrona");
 DEFINE_STRING_LOCAL(menu_credits_line_2,     "Wonderful...........Asie");
 DEFINE_STRING_LOCAL(menu_credits_line_3,     "Created by @RetroZelda");
+DEFINE_STRING_LOCAL(menu_credits_line_4,     "Version 1.0");
 DEFINE_STRING_LOCAL(menu_credits_exit,       "Press any key to return");
 
 static ts_menu_result ws_iram selected_menu_item;
@@ -105,6 +106,7 @@ static void draw_credits()
     ts_utility_screen_print(&wse_screen2, CREDITS_START_X + 6, CREDITS_START_Y - 1, menu_credits_line_0);
     ts_utility_screen_print(&wse_screen2, CREDITS_START_X, CREDITS_START_Y + 1, menu_credits_line_1);
     ts_utility_screen_print(&wse_screen2, CREDITS_START_X, CREDITS_START_Y + 4, menu_credits_line_2);
+    ts_utility_screen_print(&wse_screen2, 0, 17, menu_credits_line_4);
 }
 
 void ts_menu_setup()
