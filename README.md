@@ -11,7 +11,7 @@ Expect terrible performance of Tamalib, but feel free to contribute to either th
 <img width="237" height="144" alt="tamagoswan_000" src="https://github.com/user-attachments/assets/788103af-c548-47c9-a0f8-c34bf8ad72c2" />
 <img width="237" height="144" alt="tamagoswan_003" src="https://github.com/user-attachments/assets/b717ee34-265e-48b2-990c-015e3f04ea55" />
 
-This was tested with the P1 rom, however any tamalib compatible rom should work.  The roms need their bits flipped manually before including in the build.
+This was tested with the P1 rom, however any tamalib compatible rom should work.  The roms need their endianness flipped manually before including in the build.
 
 Requires WonderSwan Color or Crystal. Tested on Mesen2 but untested on actual hardware.  Let me know if you have a flashcart you want to sell :)
 
